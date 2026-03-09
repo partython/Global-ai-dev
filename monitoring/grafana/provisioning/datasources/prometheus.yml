@@ -1,0 +1,27 @@
+# ============================================================
+# Grafana Datasource Configuration - Prometheus
+#
+# Auto-provisioned datasource for Prometheus
+#
+# SECURITY: Production must use HTTPS with certificate verification
+# Update 'url' to use https:// instead of http://
+# Add 'tlsAuth' and 'tlsAuthCAFile' for certificate verification
+# ============================================================
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    # SECURITY: In production, use HTTPS
+    # url: https://prometheus:9090
+    url: http://prometheus:9090
+    isDefault: true
+    editable: true
+    jsonData:
+      timeInterval: 15s
+    # SECURITY: Add authentication in production
+    # basicAuthUser: "${PROMETHEUS_USERNAME}"
+    # basicAuthPassword: "${PROMETHEUS_PASSWORD}"
+    # Or use bearer token if available

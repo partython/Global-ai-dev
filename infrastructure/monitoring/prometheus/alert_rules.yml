@@ -1,0 +1,436 @@
+# ============================================================
+# Prometheus Alert Rules for Priya Global Platform
+# ============================================================
+# Defines alert conditions and severity levels
+#
+# Severity Levels:
+#   - critical: Immediate action required, service down
+#   - warning: Potential issues, monitor closely
+#   - info: Informational alerts for tracking
+
+groups:
+  - name: service_health
+    interval: 30s
+    rules:
+
+      # Service Down Alert
+      - alert: ServiceDown
+        expr: up{job!~"prometheus|alertmanager|node-exporter|redis|postgres"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: service
+        annotations:
+          summary: "Service {{ $labels.job }} is down"
+          description: "Service {{ $labels.job }} has been unavailable for more than 1 minute. Instance: {{ $labels.instance }}"
+          dashboard: "http://grafana:3000/d/priya-overview"
+
+      # Multiple Services Down
+      - alert: MultipleServicesDown
+        expr: count(up{job!~"prometheus|alertmanager"} == 0) > 5
+        for: 2m
+        labels:
+          severity: critical
+          component: platform
+        annotations:
+          summary: "Multiple services are down ({{ $value }} services)"
+          description: "{{ $value }} services have been unavailable for more than 2 minutes. This indicates a platform-wide issue."
+
+  - name: request_rate_and_errors
+    interval: 30s
+    rules:
+
+      # High Error Rate Alert (>5% 5xx errors over 5 minutes)
+      - alert: HighErrorRate
+        expr: |
+          (sum(rate(http_requests_total{status=~"5.."}[5m])) by (job) /
+           sum(rate(http_requests_total[5m])) by (job)) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          component: service
+        annotations:
+          summary: "High error rate in {{ $labels.job }}"
+          description: "Service {{ $labels.job }} has error rate of {{ $value | humanizePercentage }} (>5%) over the last 5 minutes."
+
+      # Critical Error Rate (>10% 5xx errors)
+      - alert: CriticalErrorRate
+        expr: |
+          (sum(rate(http_requests_total{status=~"5.."}[5m])) by (job) /
+           sum(rate(http_requests_total[5m])) by (job)) > 0.10
+        for: 2m
+        labels:
+          severity: critical
+          component: service
+        annotations:
+          summary: "CRITICAL: Error rate in {{ $labels.job }} is critical"
+          description: "Service {{ $labels.job }} has error rate of {{ $value | humanizePercentage }} (>10%) over the last 5 minutes."
+
+      # High 4xx Rate (Client Errors)
+      - alert: High4xxRate
+        expr: |
+          (sum(rate(http_requests_total{status=~"4.."}[5m])) by (job) /
+           sum(rate(http_requests_total[5m])) by (job)) > 0.20
+        for: 5m
+        labels:
+          severity: warning
+          component: service
+        annotations:
+          summary: "High client error rate in {{ $labels.job }}"
+          description: "Service {{ $labels.job }} has 4xx error rate of {{ $value | humanizePercentage }} (>20%) over the last 5 minutes."
+
+  - name: latency
+    interval: 30s
+    rules:
+
+      # High P99 Latency (>2 seconds)
+      - alert: HighLatencyP99
+        expr: |
+          histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (job, le)) > 2.0
+        for: 5m
+        labels:
+          severity: warning
+          component: service
+        annotations:
+          summary: "High P99 latency in {{ $labels.job }}"
+          description: "Service {{ $labels.job }} P99 latency is {{ $value | humanizeDuration }} (>2s) over the last 5 minutes."
+
+      # Critical P99 Latency (>5 seconds)
+      - alert: CriticalLatencyP99
+        expr: |
+          histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (job, le)) > 5.0
+        for: 3m
+        labels:
+          severity: critical
+          component: service
+        annotations:
+          summary: "CRITICAL: P99 latency in {{ $labels.job }} is critical"
+          description: "Service {{ $labels.job }} P99 latency is {{ $value | humanizeDuration }} (>5s)."
+
+      # High P95 Latency
+      - alert: HighLatencyP95
+        expr: |
+          histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (job, le)) > 1.0
+        for: 5m
+        labels:
+          severity: info
+          component: service
+        annotations:
+          summary: "Elevated P95 latency in {{ $labels.job }}"
+          description: "Service {{ $labels.job }} P95 latency is {{ $value | humanizeDuration }} (>1s)."
+
+  - name: resource_utilization
+    interval: 30s
+    rules:
+
+      # High Memory Usage (>80% for 10 minutes)
+      - alert: HighMemoryUsage
+        expr: |
+          (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > 0.80
+        for: 10m
+        labels:
+          severity: warning
+          component: infrastructure
+        annotations:
+          summary: "High memory usage on node {{ $labels.node }}"
+          description: "Node memory usage is {{ $value | humanizePercentage }} (>80%) for more than 10 minutes."
+
+      # Critical Memory Usage (>90%)
+      - alert: CriticalMemoryUsage
+        expr: |
+          (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > 0.90
+        for: 5m
+        labels:
+          severity: critical
+          component: infrastructure
+        annotations:
+          summary: "CRITICAL: Memory usage on node {{ $labels.node }} is critical"
+          description: "Node memory usage is {{ $value | humanizePercentage }} (>90%)."
+
+      # High CPU Usage (>80% for 10 minutes)
+      - alert: HighCPUUsage
+        expr: |
+          (100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)) > 80
+        for: 10m
+        labels:
+          severity: warning
+          component: infrastructure
+        annotations:
+          summary: "High CPU usage on node {{ $labels.instance }}"
+          description: "Node CPU usage is {{ $value | humanizePercentage }} (>80%) for more than 10 minutes."
+
+      # Critical CPU Usage (>90%)
+      - alert: CriticalCPUUsage
+        expr: |
+          (100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)) > 90
+        for: 5m
+        labels:
+          severity: critical
+          component: infrastructure
+        annotations:
+          summary: "CRITICAL: CPU usage on node {{ $labels.instance }} is critical"
+          description: "Node CPU usage is {{ $value | humanizePercentage }} (>90%)."
+
+      # High Disk Usage (>85%)
+      - alert: HighDiskUsage
+        expr: |
+          (1 - (node_filesystem_avail_bytes{device!~"loop.*",fstype!~"tmpfs|fuse.lxcfs|squashfs|vfat"} /
+           node_filesystem_size_bytes{device!~"loop.*",fstype!~"tmpfs|fuse.lxcfs|squashfs|vfat"})) > 0.85
+        for: 10m
+        labels:
+          severity: warning
+          component: infrastructure
+        annotations:
+          summary: "High disk usage on {{ $labels.device }}"
+          description: "Disk {{ $labels.device }} usage is {{ $value | humanizePercentage }} (>85%)."
+
+      # Critical Disk Usage (>95%)
+      - alert: CriticalDiskUsage
+        expr: |
+          (1 - (node_filesystem_avail_bytes{device!~"loop.*",fstype!~"tmpfs|fuse.lxcfs|squashfs|vfat"} /
+           node_filesystem_size_bytes{device!~"loop.*",fstype!~"tmpfs|fuse.lxcfs|squashfs|vfat"})) > 0.95
+        for: 5m
+        labels:
+          severity: critical
+          component: infrastructure
+        annotations:
+          summary: "CRITICAL: Disk usage on {{ $labels.device }} is critical"
+          description: "Disk {{ $labels.device }} usage is {{ $value | humanizePercentage }} (>95%)."
+
+  - name: database
+    interval: 30s
+    rules:
+
+      # PostgreSQL Down
+      - alert: PostgreSQLDown
+        expr: pg_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "PostgreSQL database is down"
+          description: "PostgreSQL has been unavailable for more than 1 minute at {{ $labels.instance }}"
+
+      # Database Connection Pool Exhaustion
+      - alert: DBConnectionPoolExhaustion
+        expr: |
+          (pg_stat_activity_count / pg_settings_max_connections) > 0.80
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "Database connection pool nearing exhaustion"
+          description: "Database connection pool usage is {{ $value | humanizePercentage }} (>80%). Current connections: {{ $value }}."
+
+      # Critical Connection Pool Usage
+      - alert: DBConnectionPoolCritical
+        expr: |
+          (pg_stat_activity_count / pg_settings_max_connections) > 0.95
+        for: 2m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "CRITICAL: Database connection pool is critical"
+          description: "Database connection pool usage is {{ $value | humanizePercentage }} (>95%)."
+
+      # High Idle Connections
+      - alert: HighIdleConnections
+        expr: |
+          pg_stat_activity_count{state="idle"} > 50
+        for: 10m
+        labels:
+          severity: info
+          component: database
+        annotations:
+          summary: "High number of idle database connections"
+          description: "Database has {{ $value }} idle connections. Consider connection pooling optimization."
+
+      # Database Slow Queries
+      - alert: SlowQueries
+        expr: |
+          increase(pg_stat_statements_mean_exec_time{mean_exec_time > "1000"}[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "Slow queries detected in PostgreSQL"
+          description: "Queries with mean execution time > 1000ms detected."
+
+  - name: redis
+    interval: 30s
+    rules:
+
+      # Redis Down
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: cache
+        annotations:
+          summary: "Redis cache is down"
+          description: "Redis has been unavailable for more than 1 minute at {{ $labels.instance }}"
+
+      # High Redis Memory Usage (>80% of max)
+      - alert: HighRedisMemory
+        expr: |
+          (redis_memory_used_bytes / redis_memory_max_bytes) > 0.80
+        for: 5m
+        labels:
+          severity: warning
+          component: cache
+        annotations:
+          summary: "Redis memory usage is high"
+          description: "Redis memory usage is {{ $value | humanizePercentage }} (>80% of max {{ $value }} bytes)."
+
+      # Critical Redis Memory Usage (>95%)
+      - alert: CriticalRedisMemory
+        expr: |
+          (redis_memory_used_bytes / redis_memory_max_bytes) > 0.95
+        for: 2m
+        labels:
+          severity: critical
+          component: cache
+        annotations:
+          summary: "CRITICAL: Redis memory usage is critical"
+          description: "Redis memory usage is {{ $value | humanizePercentage }} (>95% of max)."
+
+      # Redis Evictions Occurring
+      - alert: RedisEvictions
+        expr: |
+          increase(redis_evicted_keys_total[5m]) > 0
+        for: 2m
+        labels:
+          severity: warning
+          component: cache
+        annotations:
+          summary: "Redis is evicting keys"
+          description: "Redis has evicted {{ $value }} keys in the last 5 minutes due to memory pressure."
+
+      # Low Redis Hit Rate
+      - alert: LowRedisHitRate
+        expr: |
+          (redis_keyspace_hits_total / (redis_keyspace_hits_total + redis_keyspace_misses_total)) < 0.70
+        for: 10m
+        labels:
+          severity: info
+          component: cache
+        annotations:
+          summary: "Low Redis cache hit rate"
+          description: "Redis hit rate is {{ $value | humanizePercentage }} (<70%). Consider cache strategy optimization."
+
+  - name: kafka
+    interval: 30s
+    rules:
+
+      # Kafka Consumer Lag (High Lag)
+      - alert: HighConsumerLag
+        expr: |
+          kafka_consumer_lag_sum > 10000
+        for: 5m
+        labels:
+          severity: warning
+          component: messaging
+        annotations:
+          summary: "High Kafka consumer lag in {{ $labels.consumer_group }}"
+          description: "Consumer group {{ $labels.consumer_group }} lag is {{ $value }} messages (>10000). Topics: {{ $labels.topics }}"
+
+      # Kafka Consumer Lag Critical
+      - alert: CriticalConsumerLag
+        expr: |
+          kafka_consumer_lag_sum > 100000
+        for: 3m
+        labels:
+          severity: critical
+          component: messaging
+        annotations:
+          summary: "CRITICAL: Kafka consumer lag is critical in {{ $labels.consumer_group }}"
+          description: "Consumer group {{ $labels.consumer_group }} lag is {{ $value }} messages (>100000)."
+
+  - name: ssl_certificates
+    interval: 1h
+    rules:
+
+      # SSL Certificate Expiring Soon (<14 days)
+      - alert: SSLCertificateExpiringSoon
+        expr: |
+          (ssl_certificate_not_after - time()) / 86400 < 14
+        for: 1h
+        labels:
+          severity: warning
+          component: security
+        annotations:
+          summary: "SSL certificate expiring soon"
+          description: "SSL certificate for {{ $labels.domain }} expires in {{ $value | humanizeDuration }}."
+
+      # SSL Certificate Expiring Very Soon (<7 days)
+      - alert: SSLCertificateExpiringVerysSoon
+        expr: |
+          (ssl_certificate_not_after - time()) / 86400 < 7
+        for: 30m
+        labels:
+          severity: critical
+          component: security
+        annotations:
+          summary: "CRITICAL: SSL certificate expiring very soon"
+          description: "SSL certificate for {{ $labels.domain }} expires in {{ $value | humanizeDuration }}."
+
+  - name: rate_limiting
+    interval: 30s
+    rules:
+
+      # Rate Limit Exhaustion
+      - alert: RateLimitExhaustion
+        expr: |
+          (increase(rate_limit_requests_remaining[1m]) / on(instance) rate_limit_requests_limit) < 0.10
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "API rate limit near exhaustion for {{ $labels.client_id }}"
+          description: "API rate limit for {{ $labels.client_id }} at {{ $value | humanizePercentage }} remaining (<10%)."
+
+      # Service Request Queue Building Up
+      - alert: RequestQueueBuildup
+        expr: |
+          increase(http_requests_in_progress[5m]) > 100
+        for: 5m
+        labels:
+          severity: warning
+          component: service
+        annotations:
+          summary: "Request queue building up in {{ $labels.job }}"
+          description: "Service {{ $labels.job }} has {{ $value }} requests in progress. May indicate saturation."
+
+  - name: data_freshness
+    interval: 30s
+    rules:
+
+      # Metrics Not Being Collected
+      - alert: NoMetricsCollected
+        expr: |
+          time() - timestamp(up{job!="prometheus"}) > 300
+        for: 5m
+        labels:
+          severity: warning
+          component: monitoring
+        annotations:
+          summary: "No metrics collected from {{ $labels.job }} for 5 minutes"
+          description: "Last metrics from {{ $labels.job }} received more than 5 minutes ago."
+
+      # Alerts Not Firing (Dead Monitoring)
+      - alert: AlertsNotFiring
+        expr: |
+          changes(ALERTS_FOR_STATE[1h]) == 0 and on() bool(1)
+        for: 1h
+        labels:
+          severity: critical
+          component: monitoring
+        annotations:
+          summary: "Alert system may be non-functional"
+          description: "No alert state changes in the last hour. Alert system may be down."

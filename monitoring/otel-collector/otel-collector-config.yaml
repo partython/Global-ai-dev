@@ -1,0 +1,146 @@
+# OpenTelemetry Collector Configuration for Priya Global Platform
+# Receives traces from all 36 microservices via OTLP gRPC/HTTP
+# Processes them (sampling, batching, enrichment) and exports to backends
+
+receivers:
+  # OTLP gRPC receiver - primary ingestion point
+  # SECURITY: Bind to internal interface only; require mTLS in production
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 127.0.0.1:4317  # SECURITY: Changed from 0.0.0.0 to localhost only
+        max_recv_msg_size_mib: 16
+        # TODO: Configure mTLS for production
+        # tls:
+        #   cert_file: /etc/certs/server.crt
+        #   key_file: /etc/certs/server.key
+      http:
+        endpoint: 127.0.0.1:4318  # SECURITY: Changed from 0.0.0.0 to localhost only
+        # TODO: Add bearer token auth
+        # cors:
+        #   allowed_origins:
+        #     - https://internal.priya.local
+        #   allowed_headers:
+        #     - Authorization
+
+processors:
+  # Memory limiter to prevent OOM in production
+  # Drops oldest spans if memory exceeds threshold
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 1024
+    spike_limit_mib: 256
+
+  # Batch processor for efficient export
+  # Groups spans and exports them in batches
+  batch:
+    send_batch_size: 512
+    timeout: 5s
+    send_batch_max_size: 1024
+
+  # Tail-based sampling for intelligent span sampling
+  # Rules:
+  # 1. Sample 100% of error traces (status_code >= 400)
+  # 2. Sample 10% of slow traces (duration > 1 second)
+  # 3. Sample 1% of normal traces for baseline visibility
+  tail_sampling:
+    policies:
+      # Always sample error spans
+      - name: error_spans
+        type: status_code
+        status_code:
+          status_codes: [ERROR]
+
+      # Sample slow requests (>1 second)
+      - name: slow_traces
+        type: latency
+        latency:
+          threshold_ms: 1000
+
+      # Sample traces containing specific services
+      - name: critical_services
+        type: string_attribute
+        string_attribute:
+          key: service.name
+          values:
+            - auth-service
+            - billing-service
+            - payment-service
+            - ai-engine
+
+      # Probabilistic sampling for remaining traces (1%)
+      - name: probabilistic_remainder
+        type: probabilistic
+        probabilistic:
+          sampling_percentage: 1
+
+  # Span attributes processor to add enrichment
+  attributes:
+    actions:
+      - key: environment
+        value: production
+        action: upsert
+      - key: platform
+        value: priya-global
+        action: upsert
+
+exporters:
+  # Jaeger exporter for long-term trace storage and visualization
+  jaeger:
+    endpoint: jaeger:14250
+    timeout: 30s
+
+  # Prometheus exporter for metrics (traces include timing metrics)
+  prometheus:
+    endpoint: "0.0.0.0:8889"
+    namespace: otel
+    const_labels:
+      environment: production
+      platform: priya-global
+
+  # Logging exporter for debugging (only in non-production)
+  logging:
+    loglevel: debug
+    sampling_initial: 5
+    sampling_thereafter: 200
+
+  # Optional: Tempo exporter for large-scale trace storage
+  # otlp:
+  #   endpoint: tempo:4317
+  #   tls:
+  #     insecure: true
+
+  # Optional: Datadog exporter for full observability platform
+  # datadog:
+  #   api:
+  #     endpoint: https://api.datadoghq.com/api/v2/spans
+  #     key: ${DATADOG_API_KEY}
+  #   host_metadata: true
+
+service:
+  pipelines:
+    # Main traces pipeline
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch, tail_sampling, attributes]
+      exporters: [jaeger, prometheus, logging]
+
+  # Extensions for health checks and monitoring
+  extensions:
+    - health_check
+
+extensions:
+  # Health check endpoint on /healthz
+  health_check:
+    endpoint: :13133
+
+# Logging configuration
+logging:
+  level: info
+  format: json
+
+# Metrics for the collector itself
+metrics:
+  level: detailed
+  prometheus:
+    endpoint: :8888

@@ -1,0 +1,387 @@
+# ============================================================
+# Prometheus Configuration for Priya Global Platform
+# ============================================================
+# Scrapes metrics from:
+# - All 41 Priya Global microservices (ports 9000-9043)
+# - Node Exporter (host system metrics)
+# - Redis Exporter (Redis cache metrics)
+# - PostgreSQL Exporter (database metrics)
+# - Prometheus self-monitoring
+
+global:
+  scrape_interval: 15s        # Default scrape interval
+  evaluation_interval: 15s    # Evaluation interval for alerts/rules
+  scrape_timeout: 10s         # Max time to wait for scrape response
+  external_labels:
+    monitor: 'priya-global'
+    environment: 'production'
+    cluster: 'primary'
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
+      scheme: http
+      timeout: 10s
+      api_version: v1
+
+# Load alert and recording rules
+rule_files:
+  - "alert_rules.yml"
+  - "recording_rules.yml"
+
+scrape_configs:
+
+  # ─── Core Platform Services (9000-9043) ───
+
+  # Gateway Service (port 9000)
+  - job_name: 'gateway'
+    static_configs:
+      - targets: ['gateway:9000']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+    scrape_timeout: 10s
+
+  # Auth Service (port 9001)
+  - job_name: 'auth'
+    static_configs:
+      - targets: ['auth:9001']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Tenant Management (port 9002)
+  - job_name: 'tenant'
+    static_configs:
+      - targets: ['tenant:9002']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Channel Router (port 9003)
+  - job_name: 'channel-router'
+    static_configs:
+      - targets: ['channel-router:9003']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # AI Engine (port 9004)
+  - job_name: 'ai-engine'
+    static_configs:
+      - targets: ['ai-engine:9004']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # WhatsApp Service (port 9005)
+  - job_name: 'whatsapp'
+    static_configs:
+      - targets: ['whatsapp:9005']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Email Service (port 9006)
+  - job_name: 'email'
+    static_configs:
+      - targets: ['email:9006']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Voice Service (port 9007)
+  - job_name: 'voice'
+    static_configs:
+      - targets: ['voice:9007']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Social Media (port 9008)
+  - job_name: 'social'
+    static_configs:
+      - targets: ['social:9008']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Webchat (port 9009)
+  - job_name: 'webchat'
+    static_configs:
+      - targets: ['webchat:9009']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # SMS Service (port 9010)
+  - job_name: 'sms'
+    static_configs:
+      - targets: ['sms:9010']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Telegram (port 9011)
+  - job_name: 'telegram'
+    static_configs:
+      - targets: ['telegram:9011']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Billing Service (port 9012)
+  - job_name: 'billing'
+    static_configs:
+      - targets: ['billing:9012']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Analytics Service (port 9013)
+  - job_name: 'analytics'
+    static_configs:
+      - targets: ['analytics:9013']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Marketing Service (port 9014)
+  - job_name: 'marketing'
+    static_configs:
+      - targets: ['marketing:9014']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # E-commerce Service (port 9015)
+  - job_name: 'ecommerce'
+    static_configs:
+      - targets: ['ecommerce:9015']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Notification Service (port 9016)
+  - job_name: 'notification'
+    static_configs:
+      - targets: ['notification:9016']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Conversation Intelligence (port 9017)
+  - job_name: 'conversation-intel'
+    static_configs:
+      - targets: ['conversation-intel:9017']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Leads Service (port 9018)
+  - job_name: 'leads'
+    static_configs:
+      - targets: ['leads:9018']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Knowledge Base (port 9019)
+  - job_name: 'knowledge'
+    static_configs:
+      - targets: ['knowledge:9019']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Voice AI (port 9020)
+  - job_name: 'voice-ai'
+    static_configs:
+      - targets: ['voice-ai:9020']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Video Service (port 9021)
+  - job_name: 'video'
+    static_configs:
+      - targets: ['video:9021']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # RCS Service (port 9022)
+  - job_name: 'rcs'
+    static_configs:
+      - targets: ['rcs:9022']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Workflows Service (port 9023)
+  - job_name: 'workflows'
+    static_configs:
+      - targets: ['workflows:9023']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Health Monitor (port 9024)
+  - job_name: 'health-monitor'
+    static_configs:
+      - targets: ['health-monitor:9024']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # CDN Manager (port 9025)
+  - job_name: 'cdn-manager'
+    static_configs:
+      - targets: ['cdn-manager:9025']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Deployment Service (port 9026)
+  - job_name: 'deployment'
+    static_configs:
+      - targets: ['deployment:9026']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Compliance Service (port 9027)
+  - job_name: 'compliance'
+    static_configs:
+      - targets: ['compliance:9027']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Liveliness Service (port 9028)
+  - job_name: 'liveliness'
+    static_configs:
+      - targets: ['liveliness:9028']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Sentiment Analysis (port 9029)
+  - job_name: 'sentiment-analysis'
+    static_configs:
+      - targets: ['sentiment-analysis:9029']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Custom Routes (port 9030)
+  - job_name: 'custom-routes'
+    static_configs:
+      - targets: ['custom-routes:9030']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Template Engine (port 9031)
+  - job_name: 'template-engine'
+    static_configs:
+      - targets: ['template-engine:9031']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Search Service (port 9032)
+  - job_name: 'search'
+    static_configs:
+      - targets: ['search:9032']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Recommendation Engine (port 9033)
+  - job_name: 'recommendations'
+    static_configs:
+      - targets: ['recommendations:9033']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Personalization Service (port 9034)
+  - job_name: 'personalization'
+    static_configs:
+      - targets: ['personalization:9034']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Audit Logging (port 9035)
+  - job_name: 'audit-logging'
+    static_configs:
+      - targets: ['audit-logging:9035']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Account Management (port 9036)
+  - job_name: 'account-management'
+    static_configs:
+      - targets: ['account-management:9036']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Profile Service (port 9037)
+  - job_name: 'profile'
+    static_configs:
+      - targets: ['profile:9037']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Media Management (port 9038)
+  - job_name: 'media-management'
+    static_configs:
+      - targets: ['media-management:9038']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Webhook Service (port 9039)
+  - job_name: 'webhooks'
+    static_configs:
+      - targets: ['webhooks:9039']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # API Gateway Proxy (port 9040)
+  - job_name: 'api-gateway-proxy'
+    static_configs:
+      - targets: ['api-gateway-proxy:9040']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Cache Manager (port 9041)
+  - job_name: 'cache-manager'
+    static_configs:
+      - targets: ['cache-manager:9041']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Queue Manager (port 9042)
+  - job_name: 'queue-manager'
+    static_configs:
+      - targets: ['queue-manager:9042']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Service Discovery (port 9043)
+  - job_name: 'service-discovery'
+    static_configs:
+      - targets: ['service-discovery:9043']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # ─── Infrastructure Exporters ───
+
+  # Node Exporter (Host System Metrics)
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # Redis Exporter
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # PostgreSQL Exporter
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # ─── Prometheus Self-Monitoring ───
+
+  # Prometheus Self
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # AlertManager
+  - job_name: 'alertmanager'
+    static_configs:
+      - targets: ['alertmanager:9093']
+    metrics_path: '/metrics'
+    scrape_interval: 30s

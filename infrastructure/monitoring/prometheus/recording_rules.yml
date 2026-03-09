@@ -1,0 +1,344 @@
+# ============================================================
+# Prometheus Recording Rules for Priya Global Platform
+# ============================================================
+# Pre-computes frequently used metrics for better dashboard performance
+# Reduces query latency and server load
+
+groups:
+  - name: request_metrics
+    interval: 15s
+    rules:
+
+      # Request Rate (requests per second) - Per Service
+      - record: instance:http_requests_rate:per_service
+        expr: |
+          sum by (job) (rate(http_requests_total[5m]))
+
+      # Request Rate by Endpoint
+      - record: instance:http_requests_rate:by_endpoint
+        expr: |
+          sum by (job, endpoint, method) (rate(http_requests_total[5m]))
+
+      # Request Rate by Status Code
+      - record: instance:http_requests_rate:by_status
+        expr: |
+          sum by (job, status_code) (rate(http_requests_total[5m]))
+
+      # Total Requests Count - Per Service
+      - record: instance:http_requests_total:per_service
+        expr: |
+          sum by (job) (http_requests_total)
+
+      # Request Count by Endpoint
+      - record: instance:http_requests_total:by_endpoint
+        expr: |
+          sum by (job, endpoint, method) (http_requests_total)
+
+  - name: error_metrics
+    interval: 15s
+    rules:
+
+      # Error Rate (5xx) - Per Service
+      - record: instance:http_error_rate:5xx_per_service
+        expr: |
+          sum by (job) (rate(http_requests_total{status_code=~"5.."}[5m]))
+          /
+          sum by (job) (rate(http_requests_total[5m]))
+
+      # Error Count (5xx) - Per Service
+      - record: instance:http_errors:5xx_total_per_service
+        expr: |
+          sum by (job) (increase(http_requests_total{status_code=~"5.."}[5m]))
+
+      # Error Rate (4xx) - Per Service
+      - record: instance:http_error_rate:4xx_per_service
+        expr: |
+          sum by (job) (rate(http_requests_total{status_code=~"4.."}[5m]))
+          /
+          sum by (job) (rate(http_requests_total[5m]))
+
+      # Error Count (4xx) - Per Service
+      - record: instance:http_errors:4xx_total_per_service
+        expr: |
+          sum by (job) (increase(http_requests_total{status_code=~"4.."}[5m]))
+
+      # Error Rate by Endpoint
+      - record: instance:http_error_rate:by_endpoint
+        expr: |
+          sum by (job, endpoint, method) (rate(http_requests_total{status_code=~"5.."}[5m]))
+          /
+          sum by (job, endpoint, method) (rate(http_requests_total[5m]))
+
+  - name: latency_metrics
+    interval: 15s
+    rules:
+
+      # P99 Latency - Per Service
+      - record: instance:http_request_duration:p99_per_service
+        expr: |
+          histogram_quantile(0.99, sum by (job, le) (rate(http_request_duration_seconds_bucket[5m])))
+
+      # P95 Latency - Per Service
+      - record: instance:http_request_duration:p95_per_service
+        expr: |
+          histogram_quantile(0.95, sum by (job, le) (rate(http_request_duration_seconds_bucket[5m])))
+
+      # P50 Latency (Median) - Per Service
+      - record: instance:http_request_duration:p50_per_service
+        expr: |
+          histogram_quantile(0.50, sum by (job, le) (rate(http_request_duration_seconds_bucket[5m])))
+
+      # Average Latency - Per Service
+      - record: instance:http_request_duration:avg_per_service
+        expr: |
+          sum by (job) (rate(http_request_duration_seconds_sum[5m]))
+          /
+          sum by (job) (rate(http_request_duration_seconds_count[5m]))
+
+      # Max Latency - Per Service
+      - record: instance:http_request_duration:max_per_service
+        expr: |
+          max by (job) (http_request_duration_seconds_bucket)
+
+      # P99 Latency by Endpoint
+      - record: instance:http_request_duration:p99_by_endpoint
+        expr: |
+          histogram_quantile(0.99, sum by (job, endpoint, method, le) (rate(http_request_duration_seconds_bucket[5m])))
+
+      # P95 Latency by Endpoint
+      - record: instance:http_request_duration:p95_by_endpoint
+        expr: |
+          histogram_quantile(0.95, sum by (job, endpoint, method, le) (rate(http_request_duration_seconds_bucket[5m])))
+
+      # Slow Requests (>1s) - Per Service
+      - record: instance:http_slow_requests:>1s_per_service
+        expr: |
+          sum by (job) (rate(http_request_duration_seconds_bucket{le="+Inf"}[5m]))
+          -
+          sum by (job) (rate(http_request_duration_seconds_bucket{le="1.0"}[5m]))
+
+  - name: throughput_metrics
+    interval: 15s
+    rules:
+
+      # Active Conversations (gauge-like)
+      - record: instance:active_conversations:total
+        expr: |
+          sum(active_conversations) by (channel)
+
+      # Messages per Second
+      - record: instance:message_throughput:per_second
+        expr: |
+          sum(rate(messages_processed_total[5m]))
+
+      # Messages per Service
+      - record: instance:message_throughput:per_service
+        expr: |
+          sum by (job) (rate(messages_processed_total[5m]))
+
+      # Requests per Second (All Services)
+      - record: instance:global_request_rate:per_second
+        expr: |
+          sum(rate(http_requests_total[5m]))
+
+      # Success Rate (2xx/3xx)
+      - record: instance:http_success_rate:per_service
+        expr: |
+          sum by (job) (rate(http_requests_total{status_code=~"2..|3.."}[5m]))
+          /
+          sum by (job) (rate(http_requests_total[5m]))
+
+  - name: resource_metrics
+    interval: 30s
+    rules:
+
+      # Memory Usage Ratio (%)
+      - record: instance:memory_usage_ratio:percent
+        expr: |
+          (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100
+
+      # CPU Usage Ratio (%)
+      - record: instance:cpu_usage_ratio:percent
+        expr: |
+          (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m]))) * 100
+
+      # CPU Usage by Mode
+      - record: instance:cpu_usage:by_mode
+        expr: |
+          avg by (instance, mode) (rate(node_cpu_seconds_total[5m])) * 100
+
+      # Disk Usage Ratio (%)
+      - record: instance:disk_usage_ratio:percent
+        expr: |
+          (1 - (node_filesystem_avail_bytes / node_filesystem_size_bytes)) * 100
+
+      # Network I/O
+      - record: instance:network_receive_bytes:per_second
+        expr: |
+          sum by (instance, device) (rate(node_network_receive_bytes_total[5m]))
+
+      - record: instance:network_transmit_bytes:per_second
+        expr: |
+          sum by (instance, device) (rate(node_network_transmit_bytes_total[5m]))
+
+      # Disk I/O Read
+      - record: instance:disk_read_bytes:per_second
+        expr: |
+          sum by (instance, device) (rate(node_disk_read_bytes_total[5m]))
+
+      # Disk I/O Write
+      - record: instance:disk_write_bytes:per_second
+        expr: |
+          sum by (instance, device) (rate(node_disk_write_bytes_total[5m]))
+
+  - name: database_metrics
+    interval: 30s
+    rules:
+
+      # Connection Pool Usage (%)
+      - record: instance:postgres_connection_pool_usage:percent
+        expr: |
+          (pg_stat_activity_count / pg_settings_max_connections) * 100
+
+      # Active Connections
+      - record: instance:postgres_active_connections:count
+        expr: |
+          pg_stat_activity_count{state="active"}
+
+      # Idle Connections
+      - record: instance:postgres_idle_connections:count
+        expr: |
+          pg_stat_activity_count{state="idle"}
+
+      # Query Duration - P95
+      - record: instance:postgres_query_duration:p95
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(pg_stat_statements_duration_seconds_bucket[5m])))
+
+      # Query Duration - P99
+      - record: instance:postgres_query_duration:p99
+        expr: |
+          histogram_quantile(0.99, sum by (le) (rate(pg_stat_statements_duration_seconds_bucket[5m])))
+
+      # Database Size
+      - record: instance:postgres_database_size:bytes
+        expr: |
+          pg_database_size_bytes
+
+      # Table Size
+      - record: instance:postgres_table_size:bytes
+        expr: |
+          sum by (schemaname, tablename) (pg_table_size_bytes)
+
+      # Index Scans (Efficiency)
+      - record: instance:postgres_index_scans:total
+        expr: |
+          sum by (relname) (pg_stat_user_indexes_idx_scan)
+
+      # Sequential Scans (Inefficiency)
+      - record: instance:postgres_sequential_scans:total
+        expr: |
+          sum by (relname) (pg_stat_user_tables_seq_scan)
+
+  - name: redis_metrics
+    interval: 30s
+    rules:
+
+      # Redis Memory Usage (%)
+      - record: instance:redis_memory_usage:percent
+        expr: |
+          (redis_memory_used_bytes / redis_memory_max_bytes) * 100
+
+      # Redis Hit Rate (%)
+      - record: instance:redis_hit_rate:percent
+        expr: |
+          (redis_keyspace_hits_total / (redis_keyspace_hits_total + redis_keyspace_misses_total)) * 100
+
+      # Redis Eviction Rate
+      - record: instance:redis_evictions:per_second
+        expr: |
+          sum(rate(redis_evicted_keys_total[5m]))
+
+      # Redis Keys (by database)
+      - record: instance:redis_keys:by_db
+        expr: |
+          redis_db_keys by (db)
+
+      # Redis Expires Rate
+      - record: instance:redis_expires:per_second
+        expr: |
+          sum(rate(redis_expired_keys_total[5m]))
+
+      # Redis Commands per Second
+      - record: instance:redis_commands:per_second
+        expr: |
+          sum(rate(redis_commands_processed_total[5m]))
+
+  - name: conversation_metrics
+    interval: 15s
+    rules:
+
+      # Active Conversations by Channel
+      - record: instance:conversations:active_by_channel
+        expr: |
+          sum by (channel) (active_conversations)
+
+      # Total Conversations
+      - record: instance:conversations:total_active
+        expr: |
+          sum(active_conversations)
+
+      # Conversation Duration - Average
+      - record: instance:conversation_duration:avg_by_channel
+        expr: |
+          sum by (channel) (rate(conversation_duration_seconds_sum[5m]))
+          /
+          sum by (channel) (rate(conversation_duration_seconds_count[5m]))
+
+      # Messages per Conversation
+      - record: instance:messages_per_conversation:avg
+        expr: |
+          sum(rate(messages_processed_total[5m]))
+          /
+          sum(rate(conversations_completed_total[5m]))
+
+  - name: ai_metrics
+    interval: 15s
+    rules:
+
+      # AI Engine Latency - P99
+      - record: instance:ai_engine_latency:p99
+        expr: |
+          histogram_quantile(0.99, sum by (le) (rate(ai_inference_duration_seconds_bucket[5m])))
+
+      # AI Engine Latency - P95
+      - record: instance:ai_engine_latency:p95
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(ai_inference_duration_seconds_bucket[5m])))
+
+      # AI Inference Success Rate
+      - record: instance:ai_inference_success_rate:percent
+        expr: |
+          (sum(rate(ai_inference_total{status="success"}[5m])) /
+           sum(rate(ai_inference_total[5m]))) * 100
+
+      # AI Model Accuracy
+      - record: instance:ai_model_accuracy:percent
+        expr: |
+          sum by (model) (rate(ai_model_correct_predictions[5m]))
+          /
+          sum by (model) (rate(ai_model_total_predictions[5m])) * 100
+
+  - name: availability_metrics
+    interval: 30s
+    rules:
+
+      # Service Availability (%)
+      - record: instance:service_availability:percent
+        expr: |
+          (1 - (increase(up{job!="prometheus"}[1h] == 0) / count(up{job!="prometheus"}))) * 100
+
+      # Platform Uptime
+      - record: instance:platform_uptime:hours
+        expr: |
+          (time() - process_start_time_seconds{job="prometheus"}) / 3600

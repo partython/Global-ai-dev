@@ -1,0 +1,620 @@
+---
+# Network Policies for Priya Global Platform
+# Implements zero-trust network security
+
+apiVersion: policy/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all-ingress
+  namespace: priya-core
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+apiVersion: policy/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all-ingress
+  namespace: priya-channels
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+apiVersion: policy/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all-ingress
+  namespace: priya-business
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+apiVersion: policy/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all-ingress
+  namespace: priya-advanced
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+# Gateway can accept external traffic and route internally
+apiVersion: policy/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-gateway
+  namespace: priya-core
+spec:
+  podSelector:
+    matchLabels:
+      app: api-gateway
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: kube-system
+      ports:
+        - protocol: TCP
+          port: 9000
+        - protocol: TCP
+          port: 9001
+---
+# Allow metrics scraping from monitoring namespace
+apiVersion: policy/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-scraping
+  namespace: priya-core
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: Exists
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: priya-monitoring
+      ports:
+        - protocol: TCP
+          port: 9001
+---
+apiVersion: policy/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-scraping
+  namespace: priya-channels
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: Exists
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: priya-monitoring
+      ports:
+        - protocol: TCP
+          port: 9001
+---
+apiVersion: policy/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-scraping
+  namespace: priya-business
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: Exists
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: priya-monitoring
+      ports:
+        - protocol: TCP
+          port: 9001
+---
+apiVersion: policy/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-scraping
+  namespace: priya-advanced
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: Exists
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: priya-monitoring
+      ports:
+        - protocol: TCP
+          port: 9001
+---
+# Core services can communicate with each other
+apiVersion: policy/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-core-communication
+  namespace: priya-core
+spec:
+  podSelector:
+    matchLabels:
+      tier: core
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: priya-core
+        - namespaceSelector:
+            matchLabels:
+              name: priya-channels
+        - namespaceSelector:
+            matchLabels:
+              name: priya-business
+        - namespaceSelector:
+            matchLabels:
+              name: priya-advanced
+      ports:
+        - protocol: TCP
+          port: 9000
+        - protocol: TCP
+          port: 9001
+        - protocol: TCP
+          port: 9002
+        - protocol: TCP
+          port: 9003
+        - protocol: TCP
+          port: 9004
+        - protocol: TCP
+          port: 9005
+        - protocol: TCP
+          port: 9006
+        - protocol: TCP
+          port: 9007
+        - protocol: TCP
+          port: 9008
+        - protocol: TCP
+          port: 9009
+  egress:
+    # Allow DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Allow internal service communication
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 9000
+        - protocol: TCP
+          port: 9001
+        - protocol: TCP
+          port: 9002
+        - protocol: TCP
+          port: 9003
+        - protocol: TCP
+          port: 9004
+        - protocol: TCP
+          port: 9005
+        - protocol: TCP
+          port: 9006
+        - protocol: TCP
+          port: 9007
+        - protocol: TCP
+          port: 9008
+        - protocol: TCP
+          port: 9009
+        - protocol: TCP
+          port: 9010
+        - protocol: TCP
+          port: 9020
+        - protocol: TCP
+          port: 9030
+    # Allow RDS access
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Allow Redis access
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 6379
+    # Allow Kafka access
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 9092
+        - protocol: TCP
+          port: 9094
+---
+# Channel services communication
+apiVersion: policy/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-channel-communication
+  namespace: priya-channels
+spec:
+  podSelector:
+    matchLabels:
+      tier: channels
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: priya-core
+        - namespaceSelector:
+            matchLabels:
+              name: priya-channels
+      ports:
+        - protocol: TCP
+          port: 9010
+        - protocol: TCP
+          port: 9011
+        - protocol: TCP
+          port: 9012
+        - protocol: TCP
+          port: 9013
+        - protocol: TCP
+          port: 9014
+        - protocol: TCP
+          port: 9015
+        - protocol: TCP
+          port: 9016
+  egress:
+    # DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+    # Internal services
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 9000
+        - protocol: TCP
+          port: 9001
+        - protocol: TCP
+          port: 9002
+        - protocol: TCP
+          port: 9010
+        - protocol: TCP
+          port: 9020
+    # RDS
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Redis
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 6379
+    # Kafka
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 9092
+        - protocol: TCP
+          port: 9094
+    # External API calls (SMS, Email providers)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+          except:
+            - 169.254.169.254/32
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 80
+---
+# Business services communication
+apiVersion: policy/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-business-communication
+  namespace: priya-business
+spec:
+  podSelector:
+    matchLabels:
+      tier: business
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: priya-core
+        - namespaceSelector:
+            matchLabels:
+              name: priya-business
+      ports:
+        - protocol: TCP
+          port: 9020
+        - protocol: TCP
+          port: 9021
+        - protocol: TCP
+          port: 9022
+        - protocol: TCP
+          port: 9023
+        - protocol: TCP
+          port: 9024
+        - protocol: TCP
+          port: 9025
+        - protocol: TCP
+          port: 9026
+  egress:
+    # DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+    # Internal services
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 9000
+        - protocol: TCP
+          port: 9020
+    # RDS
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Redis
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 6379
+    # Kafka
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 9092
+        - protocol: TCP
+          port: 9094
+---
+# Advanced services (AI) communication
+apiVersion: policy/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-advanced-communication
+  namespace: priya-advanced
+spec:
+  podSelector:
+    matchLabels:
+      tier: advanced
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: priya-core
+        - namespaceSelector:
+            matchLabels:
+              name: priya-channels
+        - namespaceSelector:
+            matchLabels:
+              name: priya-business
+        - namespaceSelector:
+            matchLabels:
+              name: priya-advanced
+      ports:
+        - protocol: TCP
+          port: 9030
+        - protocol: TCP
+          port: 9031
+        - protocol: TCP
+          port: 9032
+        - protocol: TCP
+          port: 9033
+        - protocol: TCP
+          port: 9034
+        - protocol: TCP
+          port: 9035
+        - protocol: TCP
+          port: 9036
+        - protocol: TCP
+          port: 9037
+        - protocol: TCP
+          port: 9038
+        - protocol: TCP
+          port: 9039
+        - protocol: TCP
+          port: 9040
+        - protocol: TCP
+          port: 9041
+        - protocol: TCP
+          port: 9042
+  egress:
+    # DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+    # Internal services
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 9000
+        - protocol: TCP
+          port: 9030
+    # RDS
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Redis
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 6379
+    # Kafka
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 9092
+        - protocol: TCP
+          port: 9094
+    # Allow external ML/AI API calls
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+          except:
+            - 169.254.169.254/32
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 80
+---
+# ═══════════════════════════════════════════════════════════════════════════════
+# Infrastructure Namespace (priya-infra) — Budget Redis + shared infra
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Default deny all ingress in priya-infra
+apiVersion: policy/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all-ingress
+  namespace: priya-infra
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+# Allow Redis access ONLY from application namespaces on port 6379
+apiVersion: policy/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-redis-from-app-namespaces
+  namespace: priya-infra
+spec:
+  podSelector:
+    matchLabels:
+      app: redis
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: priya-core
+        - namespaceSelector:
+            matchLabels:
+              name: priya-channels
+        - namespaceSelector:
+            matchLabels:
+              name: priya-business
+        - namespaceSelector:
+            matchLabels:
+              name: priya-advanced
+      ports:
+        - protocol: TCP
+          port: 6379
+  egress:
+    # DNS only — Redis should not make outbound connections
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+# Allow Prometheus to scrape priya-infra metrics
+apiVersion: policy/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-scraping
+  namespace: priya-infra
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: Exists
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: priya-monitoring
+      ports:
+        - protocol: TCP
+          port: 9001

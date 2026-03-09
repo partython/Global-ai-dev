@@ -1,0 +1,224 @@
+# ============================================================
+# AlertManager Configuration for Priya Global Platform
+# ============================================================
+# Handles alert routing, grouping, and notification
+
+global:
+  resolve_timeout: 5m
+  slack_api_url: '${SLACK_WEBHOOK_URL}'
+  pagerduty_url: 'https://events.pagerduty.com/v2/enqueue'
+  opsgenie_api_host: 'https://api.opsgenie.com/'
+  opsgenie_api_key: '${OPSGENIE_API_KEY}'
+
+# Alert routing tree
+route:
+  receiver: 'default'
+  group_by: ['alertname', 'cluster', 'service']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 12h
+
+  routes:
+    # Critical alerts - immediate notification
+    - match:
+        severity: critical
+      receiver: 'critical'
+      group_wait: 0s
+      group_interval: 5m
+      repeat_interval: 1h
+      continue: true
+
+    # Database alerts
+    - match:
+        component: database
+      receiver: 'database-team'
+      group_by: ['alertname', 'instance']
+      group_wait: 10s
+      group_interval: 10m
+
+    # Infrastructure alerts
+    - match:
+        component: infrastructure
+      receiver: 'infrastructure-team'
+      group_by: ['alertname', 'instance']
+      group_wait: 30s
+      group_interval: 15m
+
+    # Service health alerts
+    - match:
+        component: service
+      receiver: 'service-team'
+      group_by: ['alertname', 'job']
+      group_wait: 10s
+      group_interval: 10m
+
+    # Monitoring system alerts
+    - match:
+        component: monitoring
+      receiver: 'monitoring-team'
+      group_wait: 10s
+      group_interval: 10m
+
+    # Security alerts
+    - match:
+        component: security
+      receiver: 'security-team'
+      group_wait: 0s
+      group_interval: 5m
+      repeat_interval: 2h
+
+    # Cache alerts
+    - match:
+        component: cache
+      receiver: 'cache-team'
+      group_wait: 10s
+      group_interval: 15m
+
+    # Messaging/Kafka alerts
+    - match:
+        component: messaging
+      receiver: 'messaging-team'
+      group_wait: 10s
+      group_interval: 15m
+
+    # API/Rate limiting alerts
+    - match:
+        component: api
+      receiver: 'api-team'
+      group_wait: 10s
+      group_interval: 10m
+
+    # Info level alerts
+    - match:
+        severity: info
+      receiver: 'info'
+      group_wait: 30m
+      group_interval: 1h
+
+# Receivers define how to notify
+receivers:
+  - name: 'default'
+    slack_configs:
+      - channel: '#alerts'
+        title: 'Alert: {{ .GroupLabels.alertname }}'
+        text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+        send_resolved: true
+
+  - name: 'critical'
+    slack_configs:
+      - channel: '#critical-alerts'
+        title: '🚨 CRITICAL: {{ .GroupLabels.alertname }}'
+        text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+        send_resolved: true
+    pagerduty_configs:
+      - service_key: '${PAGERDUTY_SERVICE_KEY}'
+        description: '{{ .GroupLabels.alertname }}: {{ (index .Alerts 0).Annotations.summary }}'
+        details:
+          firing: '{{ range .Alerts.Firing }}{{ .Labels.instance }}:{{ .Annotations.summary }}{{ end }}'
+
+  - name: 'database-team'
+    slack_configs:
+      - channel: '#database-team'
+        title: '[Database] {{ .GroupLabels.alertname }}'
+        text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+        send_resolved: true
+        actions:
+          - type: button
+            text: 'View Grafana'
+            url: 'http://grafana:3000/d/priya-overview'
+
+  - name: 'infrastructure-team'
+    slack_configs:
+      - channel: '#infrastructure-team'
+        title: '[Infrastructure] {{ .GroupLabels.alertname }}'
+        text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+        send_resolved: true
+
+  - name: 'service-team'
+    slack_configs:
+      - channel: '#service-team'
+        title: '[Service] {{ .GroupLabels.alertname }}'
+        text: '{{ range .Alerts }}Service: {{ .Labels.job }} - {{ .Annotations.description }}{{ end }}'
+        send_resolved: true
+
+  - name: 'monitoring-team'
+    slack_configs:
+      - channel: '#monitoring-team'
+        title: '[Monitoring] {{ .GroupLabels.alertname }}'
+        text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+        send_resolved: true
+
+  - name: 'security-team'
+    slack_configs:
+      - channel: '#security-team'
+        title: '🔒 [SECURITY] {{ .GroupLabels.alertname }}'
+        text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+        send_resolved: true
+    pagerduty_configs:
+      - service_key: '${PAGERDUTY_SECURITY_SERVICE_KEY}'
+        description: '{{ .GroupLabels.alertname }}: {{ (index .Alerts 0).Annotations.summary }}'
+
+  - name: 'cache-team'
+    slack_configs:
+      - channel: '#cache-team'
+        title: '[Cache/Redis] {{ .GroupLabels.alertname }}'
+        text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+        send_resolved: true
+
+  - name: 'messaging-team'
+    slack_configs:
+      - channel: '#messaging-team'
+        title: '[Kafka] {{ .GroupLabels.alertname }}'
+        text: '{{ range .Alerts }}Consumer Group: {{ .Labels.consumer_group }} - {{ .Annotations.description }}{{ end }}'
+        send_resolved: true
+
+  - name: 'api-team'
+    slack_configs:
+      - channel: '#api-team'
+        title: '[API] {{ .GroupLabels.alertname }}'
+        text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+        send_resolved: true
+
+  - name: 'info'
+    slack_configs:
+      - channel: '#monitoring-info'
+        title: '[Info] {{ .GroupLabels.alertname }}'
+        text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+        send_resolved: true
+
+# Inhibition rules suppress alerts
+inhibit_rules:
+  # Suppress info alerts if critical exists
+  - source_match:
+      severity: critical
+    target_match:
+      severity: info
+    equal: ['alertname', 'job']
+
+  # Suppress warning alerts if critical exists
+  - source_match:
+      severity: critical
+    target_match:
+      severity: warning
+    equal: ['alertname', 'job']
+
+  # Don't alert on any service when platform is down
+  - source_match:
+      alertname: MultipleServicesDown
+    target_match:
+      severity: warning
+    equal: ['alertname']
+
+  # Suppress connection pool warnings if database is down
+  - source_match:
+      alertname: PostgreSQLDown
+    target_match:
+      alertname: DBConnectionPoolExhaustion
+    equal: ['instance']
+
+  # Suppress redis alerts if redis is down
+  - source_match:
+      alertname: RedisDown
+    target_match:
+      alertname: HighRedisMemory
+    equal: ['instance']

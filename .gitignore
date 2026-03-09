@@ -1,0 +1,72 @@
+# ── Environment & Secrets ──
+.env
+.env.local
+.env.production
+.env.staging
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+token.json
+service-account*.json
+
+# ── Python ──
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# ── Node/Dashboard ──
+node_modules/
+.next/
+out/
+.turbo/
+npm-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# ── Docker ──
+*.log
+docker-compose.override.yml
+
+# ── IDE ──
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ── Terraform ──
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+!*.tfvars.example
+crash.log
+
+# ── Config secrets (PEM keys are in config/) ──
+config/jwt-private.pem
+config/jwt-public.pem
+
+# ── Claude context ──
+.claude/
+
+# ── Misc ──
+*.bak
+*.tmp
+*.temp

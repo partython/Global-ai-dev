@@ -1,0 +1,353 @@
+# ============================================================
+# Priya Global Platform — Weekly Security Audit
+#
+# Scheduled: Every Monday at 9 AM UTC
+# Scans:
+#  - pip-audit: Python dependencies
+#  - npm audit: Node.js dependencies
+#  - trivy: Container image vulnerabilities
+#  - bandit: Python code security issues
+#
+# Creates GitHub issue if vulnerabilities are found
+# ============================================================
+
+name: Security Audit — Weekly
+
+on:
+  schedule:
+    - cron: '0 9 * * 1'  # Every Monday 9 AM UTC
+  workflow_dispatch:     # Manual trigger
+
+concurrency:
+  group: security-audit
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "20"
+
+jobs:
+  # ─── Audit Python Dependencies ───
+  python-dependencies:
+    name: Audit Python Dependencies
+    runs-on: ubuntu-latest
+    outputs:
+      vulnerabilities: ${{ steps.pip-audit.outputs.vuln_count }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: Run pip-audit
+        id: pip-audit
+        run: |
+          echo "=== Python Dependency Security Audit ===" >> $GITHUB_STEP_SUMMARY
+
+          # Run pip-audit and capture results
+          pip-audit \
+            --desc \
+            --format json \
+            > pip-audit-report.json || true
+
+          # Extract vulnerability count
+          VULN_COUNT=$(jq '.vulnerabilities | length' pip-audit-report.json 2>/dev/null || echo "0")
+          echo "vuln_count=$VULN_COUNT" >> $GITHUB_OUTPUT
+
+          # Display results
+          if [ "$VULN_COUNT" -gt 0 ]; then
+            echo "⚠️  Found $VULN_COUNT Python vulnerabilities" >> $GITHUB_STEP_SUMMARY
+            jq '.vulnerabilities[] | "- \(.id): \(.description) (\(.vulnerability.source))"' pip-audit-report.json >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ No Python vulnerabilities found" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload pip-audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pip-audit-report
+          path: pip-audit-report.json
+          retention-days: 30
+
+  # ─── Audit Node.js Dependencies ───
+  node-dependencies:
+    name: Audit Node.js Dependencies
+    runs-on: ubuntu-latest
+    outputs:
+      vulnerabilities: ${{ steps.npm-audit.outputs.vuln_count }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Install dashboard dependencies
+        working-directory: dashboard
+        run: npm ci
+
+      - name: Run npm audit
+        id: npm-audit
+        working-directory: dashboard
+        run: |
+          echo "=== Node.js Dependency Security Audit ===" >> $GITHUB_STEP_SUMMARY
+
+          # Run npm audit and capture results
+          npm audit --json > npm-audit-report.json || true
+
+          # Extract vulnerability count
+          VULN_COUNT=$(jq '.vulnerabilities | length' npm-audit-report.json 2>/dev/null || echo "0")
+          echo "vuln_count=$VULN_COUNT" >> $GITHUB_OUTPUT
+
+          # Display results summary
+          if [ "$VULN_COUNT" -gt 0 ]; then
+            echo "⚠️  Found $VULN_COUNT Node.js vulnerabilities" >> $GITHUB_STEP_SUMMARY
+            jq '.metadata.vulnerabilities | "- Critical: \(.critical), High: \(.high), Medium: \(.medium), Low: \(.low)"' npm-audit-report.json >> $GITHUB_STEP_SUMMARY || true
+          else
+            echo "✅ No Node.js vulnerabilities found" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload npm audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-audit-report
+          path: dashboard/npm-audit-report.json
+          retention-days: 30
+
+  # ─── Container Image Scanning ───
+  container-scan:
+    name: Container Image Scan
+    runs-on: ubuntu-latest
+    outputs:
+      vulnerabilities: ${{ steps.trivy.outputs.vuln_count }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner
+        id: trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          skip-dirs: 'node_modules,venv,.venv,tests'
+
+      - name: Count vulnerabilities
+        run: |
+          echo "=== Container Image Security Scan ===" >> $GITHUB_STEP_SUMMARY
+
+          # Count vulnerabilities by severity
+          CRITICAL=$(jq '[.runs[0].results[] | select(.level == "error")] | length' trivy-results.sarif 2>/dev/null || echo "0")
+          HIGH=$(jq '[.runs[0].results[] | select(.level == "warning")] | length' trivy-results.sarif 2>/dev/null || echo "0")
+          MEDIUM=$(jq '[.runs[0].results[] | select(.level == "note")] | length' trivy-results.sarif 2>/dev/null || echo "0")
+
+          TOTAL=$((CRITICAL + HIGH + MEDIUM))
+          echo "vuln_count=$TOTAL" >> $GITHUB_OUTPUT
+
+          echo "Found vulnerabilities:" >> $GITHUB_STEP_SUMMARY
+          echo "- Critical: $CRITICAL" >> $GITHUB_STEP_SUMMARY
+          echo "- High: $HIGH" >> $GITHUB_STEP_SUMMARY
+          echo "- Medium: $MEDIUM" >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload Trivy report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-report
+          path: trivy-results.sarif
+          retention-days: 30
+
+      - name: Upload to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: trivy-results.sarif
+
+  # ─── Python Code Security ───
+  python-code-security:
+    name: Python Code Security
+    runs-on: ubuntu-latest
+    outputs:
+      issues: ${{ steps.bandit.outputs.issue_count }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install bandit
+        run: pip install bandit
+
+      - name: Run bandit security scan
+        id: bandit
+        run: |
+          echo "=== Python Code Security Scan ===" >> $GITHUB_STEP_SUMMARY
+
+          # Run bandit and generate JSON report
+          bandit -r services/ shared/ \
+            -f json \
+            -o bandit-report.json \
+            --severity-level medium \
+            --confidence-level medium \
+            -x '**/test_*,**/*_test.py,**/tests/**' \
+            || true
+
+          # Count issues
+          ISSUE_COUNT=$(jq '.results | length' bandit-report.json 2>/dev/null || echo "0")
+          echo "issue_count=$ISSUE_COUNT" >> $GITHUB_OUTPUT
+
+          if [ "$ISSUE_COUNT" -gt 0 ]; then
+            echo "⚠️  Found $ISSUE_COUNT security issues" >> $GITHUB_STEP_SUMMARY
+            jq -r '.results[] | "- \(.test_id): \(.issue_text) (\(.severity))"' bandit-report.json >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ No critical security issues found" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload bandit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bandit-security-report
+          path: bandit-report.json
+          retention-days: 30
+
+  # ─── Create Issue if Vulnerabilities Found ───
+  create-issue:
+    name: Create Security Issue
+    runs-on: ubuntu-latest
+    needs: [python-dependencies, node-dependencies, container-scan, python-code-security]
+    if: |
+      needs.python-dependencies.outputs.vulnerabilities > 0 ||
+      needs.node-dependencies.outputs.vulnerabilities > 0 ||
+      needs.container-scan.outputs.vulnerabilities > 0 ||
+      needs.python-code-security.outputs.issues > 0
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all reports
+        uses: actions/download-artifact@v4
+        with:
+          path: security-reports
+
+      - name: Create vulnerability summary
+        id: summary
+        run: |
+          PYTHON_VULNS=${{ needs.python-dependencies.outputs.vulnerabilities }}
+          NODE_VULNS=${{ needs.node-dependencies.outputs.vulnerabilities }}
+          CONTAINER_VULNS=${{ needs.container-scan.outputs.vulnerabilities }}
+          CODE_ISSUES=${{ needs.python-code-security.outputs.issues }}
+
+          BODY="# 🚨 Security Audit Results - $(date +'%Y-%m-%d')
+
+          ## Summary
+          - Python Dependencies: **$PYTHON_VULNS** vulnerabilities
+          - Node.js Dependencies: **$NODE_VULNS** vulnerabilities
+          - Container Images: **$CONTAINER_VULNS** vulnerabilities
+          - Code Security: **$CODE_ISSUES** issues
+
+          **Total Issues: $((PYTHON_VULNS + NODE_VULNS + CONTAINER_VULNS + CODE_ISSUES))**
+
+          ## Action Items
+          - [ ] Review Python dependency vulnerabilities
+          - [ ] Review Node.js dependency vulnerabilities
+          - [ ] Address critical container vulnerabilities
+          - [ ] Fix code security issues
+
+          ## Reports
+          Security audit reports have been uploaded as artifacts in the workflow run.
+
+          - [pip-audit report](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          - [npm audit report](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          - [Trivy scan report](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          - [Bandit security report](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+          **Scheduled:** Every Monday at 9:00 AM UTC
+          "
+
+          # Write to file (workaround for multi-line output)
+          echo "$BODY" > issue-body.txt
+
+      - name: Create or update issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('issue-body.txt', 'utf8');
+
+            // Check if issue already exists this week
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'security,audit',
+            });
+
+            const existingIssue = issues.data.find(issue =>
+              issue.title.includes('Security Audit Results')
+            );
+
+            if (existingIssue) {
+              // Update existing issue
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existingIssue.number,
+                body: body,
+              });
+              console.log('Updated issue #' + existingIssue.number);
+            } else {
+              // Create new issue
+              const newIssue = await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: '🚨 Security Audit Results - ' + new Date().toISOString().split('T')[0],
+                body: body,
+                labels: ['security', 'audit', 'automated'],
+              });
+              console.log('Created issue #' + newIssue.data.number);
+            }
+
+  # ─── Summary ───
+  audit-summary:
+    name: Audit Summary
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [python-dependencies, node-dependencies, container-scan, python-code-security]
+    steps:
+      - name: Generate audit summary
+        run: |
+          echo "=== Security Audit Summary ===" | tee -a $GITHUB_STEP_SUMMARY
+          echo "" | tee -a $GITHUB_STEP_SUMMARY
+          echo "Python Dependencies: ${{ needs.python-dependencies.outputs.vulnerabilities }} vulnerabilities" | tee -a $GITHUB_STEP_SUMMARY
+          echo "Node.js Dependencies: ${{ needs.node-dependencies.outputs.vulnerabilities }} vulnerabilities" | tee -a $GITHUB_STEP_SUMMARY
+          echo "Container Images: ${{ needs.container-scan.outputs.vulnerabilities }} vulnerabilities" | tee -a $GITHUB_STEP_SUMMARY
+          echo "Python Code Security: ${{ needs.python-code-security.outputs.issues }} issues" | tee -a $GITHUB_STEP_SUMMARY
+          echo "" | tee -a $GITHUB_STEP_SUMMARY
+
+          TOTAL=$((
+            ${{ needs.python-dependencies.outputs.vulnerabilities }} +
+            ${{ needs.node-dependencies.outputs.vulnerabilities }} +
+            ${{ needs.container-scan.outputs.vulnerabilities }} +
+            ${{ needs.python-code-security.outputs.issues }}
+          ))
+
+          echo "**Total Issues: $TOTAL**" | tee -a $GITHUB_STEP_SUMMARY
+
+          if [ $TOTAL -gt 0 ]; then
+            echo "::error::Security audit found $TOTAL vulnerabilities/issues"
+            exit 1
+          else
+            echo "✅ All security checks passed"
+          fi

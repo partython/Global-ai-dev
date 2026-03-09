@@ -1,0 +1,165 @@
+# ─── In-Cluster Redis for Budget Deployments ─────────────────────────────────
+# Use this instead of ElastiCache when enable_elasticache = false
+# Deploy with:
+#   1. kubectl create secret generic redis-auth -n priya-infra \
+#        --from-literal=password=$(openssl rand -base64 32)
+#   2. kubectl apply -f k8s/redis-budget.yaml
+#
+# This runs a single Redis pod with persistent storage and authentication.
+# For production, switch to ElastiCache (enable_elasticache = true).
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: priya-infra
+  labels:
+    app.kubernetes.io/part-of: priya-global
+    name: priya-infra
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redis-data
+  namespace: priya-infra
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: gp2
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: priya-infra
+  labels:
+    app: redis
+    tier: cache
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+        tier: cache
+    spec:
+      # ── Security: Run as non-root user ──
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999          # Redis UID in Alpine
+        runAsGroup: 999
+        fsGroup: 999
+      containers:
+        - name: redis
+          image: redis:7.0-alpine
+          ports:
+            - containerPort: 6379
+          # ── Security: Container-level hardening ──
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-auth
+                  key: password
+          command:
+            - redis-server
+            # ── Authentication ──
+            - --requirepass
+            - $(REDIS_PASSWORD)
+            # ── Memory ──
+            - --maxmemory
+            - "256mb"
+            - --maxmemory-policy
+            - allkeys-lru
+            # ── Persistence ──
+            - --save
+            - "60 100"
+            - --appendonly
+            - "yes"
+            - --dir
+            - /data
+            # ── Security: Disable dangerous commands ──
+            - --rename-command
+            - FLUSHALL
+            - ""
+            - --rename-command
+            - FLUSHDB
+            - ""
+            - --rename-command
+            - CONFIG
+            - ""
+            - --rename-command
+            - DEBUG
+            - ""
+            - --rename-command
+            - SHUTDOWN
+            - ""
+            # ── Network: Bind only to pod IP ──
+            - --protected-mode
+            - "yes"
+            - --tcp-backlog
+            - "128"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: redis-data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - redis-cli -a $REDIS_PASSWORD ping | grep -q PONG
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - redis-cli -a $REDIS_PASSWORD ping | grep -q PONG
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      volumes:
+        - name: redis-data
+          persistentVolumeClaim:
+            claimName: redis-data
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: priya-infra
+  labels:
+    app: redis
+spec:
+  type: ClusterIP
+  ports:
+    - port: 6379
+      targetPort: 6379
+      protocol: TCP
+  selector:
+    app: redis

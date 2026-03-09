@@ -1,0 +1,83 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: priya-postgres-dev
+    environment:
+      POSTGRES_DB: priya_global
+      POSTGRES_USER: priya_admin
+      POSTGRES_PASSWORD: priya_secure_password_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U priya_admin -d priya_global"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: priya-redis-dev
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  tenant-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: priya-tenant-service
+    ports:
+      - "9002:9002"
+    environment:
+      # Database
+      PG_HOST: postgres
+      PG_PORT: 5432
+      PG_DATABASE: priya_global
+      PG_USER: priya_admin
+      PG_PASSWORD: priya_secure_password_dev
+      PG_POOL_MIN: 2
+      PG_POOL_MAX: 20
+
+      # Redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+      REDIS_SSL: "false"
+
+      # JWT (use test keys for development)
+      JWT_SECRET_KEY: dev-secret-key-do-not-use-in-production
+      JWT_PUBLIC_KEY: dev-public-key-do-not-use-in-production
+      JWT_ISSUER: priya-global
+
+      # Service Config
+      ENVIRONMENT: development
+      DEBUG: "true"
+      LOG_LEVEL: DEBUG
+      PLATFORM_NAME: Priya AI (Dev)
+
+      # CORS
+      CORS_ORIGINS: "http://localhost:3000,http://localhost:3001,http://localhost:8000"
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app
+    command: uvicorn main:app --host 0.0.0.0 --port 9002 --reload
+
+volumes:
+  postgres_data:
+
+networks:
+  default:
+    name: priya-network

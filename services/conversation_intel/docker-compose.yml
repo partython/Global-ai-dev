@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: conv_intel
+      POSTGRES_PASSWORD: password123
+      POSTGRES_DB: aisales_prod
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U conv_intel -d aisales_prod"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  conversation_intel:
+    build: .
+    ports:
+      - "9028:9028"
+    environment:
+      DATABASE_URL: postgresql://conv_intel:password123@postgres:5432/aisales_prod
+      JWT_SECRET_KEY: dev-secret-key-change-in-production
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      CORS_ORIGINS: http://localhost:3000,http://localhost:8000
+      LOG_LEVEL: INFO
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./main.py:/app/main.py
+    command: python -m uvicorn main:app --host 0.0.0.0 --port 9028 --reload
+
+  adminer:
+    image: adminer
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+
+volumes:
+  postgres_data:
+
+networks:
+  default:
+    name: aisales_network

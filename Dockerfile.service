@@ -1,0 +1,25 @@
+# ============================================================
+# Priya Global Platform — Microservice Dockerfile
+# Build: docker build -f Dockerfile.service --build-arg SERVICE_NAME=gateway --build-arg SERVICE_PORT=9000 -t priya-global/gateway:latest .
+# ============================================================
+
+ARG PYTHON_BASE_IMAGE=priya-global/python-base:latest
+FROM ${PYTHON_BASE_IMAGE}
+
+ARG SERVICE_NAME
+ARG SERVICE_PORT=8000
+ARG WORKERS=2
+
+ENV SERVICE_NAME=${SERVICE_NAME} \
+    SERVICE_PORT=${SERVICE_PORT} \
+    WORKERS=${WORKERS} \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH=/app
+
+COPY --chown=priya:priya services/${SERVICE_NAME}/ ./services/${SERVICE_NAME}/
+WORKDIR /app/services/${SERVICE_NAME}
+USER priya
+EXPOSE ${SERVICE_PORT}
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 CMD curl -f http://localhost:${SERVICE_PORT}/health || exit 1
+CMD uvicorn main:app --host 0.0.0.0 --port ${SERVICE_PORT} --workers ${WORKERS} --loop uvloop --http httptools

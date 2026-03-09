@@ -1,0 +1,32 @@
+# ============================================================
+# Priya Global Platform — Dashboard (Next.js 14)
+# ============================================================
+
+FROM node:20-alpine AS deps
+WORKDIR /app/dashboard
+COPY dashboard/package.json dashboard/package-lock.json* dashboard/yarn.lock* ./
+RUN if [ -f yarn.lock ]; then yarn install --frozen-lockfile --production=false; elif [ -f package-lock.json ]; then npm ci; else npm install; fi
+
+FROM node:20-alpine AS builder
+WORKDIR /app/dashboard
+COPY --from=deps /app/dashboard/node_modules ./node_modules
+COPY dashboard/ .
+ARG NEXT_PUBLIC_SENTRY_DSN=""
+ARG NEXT_PUBLIC_ENVIRONMENT="production"
+ARG NEXT_PUBLIC_SENTRY_RELEASE=""
+ARG NEXT_PUBLIC_API_URL=""
+ENV NEXT_TELEMETRY_DISABLED=1 NEXT_PUBLIC_SENTRY_DSN=${NEXT_PUBLIC_SENTRY_DSN} NEXT_PUBLIC_ENVIRONMENT=${NEXT_PUBLIC_ENVIRONMENT} NEXT_PUBLIC_SENTRY_RELEASE=${NEXT_PUBLIC_SENTRY_RELEASE} NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+RUN npm run build
+
+FROM node:20-alpine AS runner
+WORKDIR /app/dashboard
+ARG NODE_ENV_OVERRIDE=production
+ENV NODE_ENV=${NODE_ENV_OVERRIDE} NEXT_TELEMETRY_DISABLED=1 PORT=3000
+RUN addgroup --system --gid 1001 priya && adduser --system --uid 1001 priya
+COPY --from=builder /app/dashboard/public ./public
+COPY --from=builder --chown=priya:priya /app/dashboard/.next/standalone ./
+COPY --from=builder --chown=priya:priya /app/dashboard/.next/static ./.next/static
+USER priya
+EXPOSE 3000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1
+CMD ["node", "server.js"]

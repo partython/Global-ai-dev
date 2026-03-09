@@ -1,0 +1,65 @@
+# Priya Global Platform - Python Dependencies
+# Install: pip install -r requirements.txt
+
+# ─── Web Framework ───
+fastapi==0.115.0
+uvicorn[standard]==0.30.0
+python-multipart==0.0.9
+
+# ─── Database ───
+asyncpg==0.29.0          # Async PostgreSQL driver
+# pgvector support via SQL extension
+
+# ─── Caching ───
+redis[hiredis]==5.0.0     # Redis client with C parser
+
+# ─── Authentication ───
+PyJWT[crypto]==2.9.0      # JWT with RS256 support
+bcrypt==4.2.0             # Password hashing
+pyotp==2.9.0              # TOTP 2FA
+qrcode[pil]==7.4.2        # QR code generation for 2FA setup
+
+# ─── HTTP Clients (for SSO, webhooks) ───
+httpx==0.27.0             # Async HTTP client
+aiohttp==3.10.0           # Alternative async HTTP
+
+# ─── Validation & Serialization ───
+pydantic==2.9.0           # Data validation
+pydantic-settings==2.5.0  # Settings management
+email-validator==2.2.0    # Email validation
+
+# ─── AWS SDK ───
+boto3==1.34.70            # AWS services (S3, SES, SQS, SNS, Cognito) — pinned for aiobotocore compat
+aiobotocore==2.13.1       # Async AWS SDK (requires botocore >=1.34.70,<1.34.107)
+aioboto3==13.1.0          # Async boto3 sessions (S3, SES)
+
+# ─── AI/LLM ───
+anthropic==0.34.0         # Claude API
+openai==1.47.0            # GPT-4 API
+google-generativeai==0.8.0  # Gemini API
+numpy==1.26.4             # Vector operations for embeddings
+
+# ─── Database ORM & Migrations ───
+sqlalchemy==2.0.35        # ORM and SQL toolkit
+alembic==1.13.3           # Database migrations
+
+# ─── Monitoring & Logging ───
+structlog==24.4.0         # Structured logging
+sentry-sdk[fastapi]==2.14.0  # Error tracking
+prometheus-client==0.21.0 # Metrics collection
+opentelemetry-api==1.27.0 # Distributed tracing
+
+# ─── Payments ───
+stripe==10.12.0           # Payment processing (subscriptions)
+razorpay==1.4.1           # Razorpay payment gateway (India wallet topups)
+
+# ─── Utilities ───
+python-dotenv==1.0.1      # .env file support
+orjson==3.10.0            # Fast JSON serialization
+cryptography==43.0.1      # Encryption/decryption (Fernet)
+phonenumbers==8.13.47     # Phone number validation
+croniter==3.0.3           # CRON expression parsing
+tenacity==9.0.0           # Retry with backoff
+slowapi==0.1.9            # Rate limiting for FastAPI
+pytz==2024.2              # Timezone support
+scipy==1.14.1             # Statistical functions

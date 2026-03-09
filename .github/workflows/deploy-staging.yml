@@ -1,0 +1,194 @@
+# ============================================================
+# Priya Global Platform — Deploy to Staging
+#
+# Auto-deploys to staging EKS cluster on merge to main.
+# Requires AWS credentials in GitHub secrets.
+#
+# TEMPLATE: Ready to activate once AWS login is available.
+# Add these GitHub secrets:
+#   AWS_ACCOUNT_ID, AWS_REGION, AWS_ACCESS_KEY_ID,
+#   AWS_SECRET_ACCESS_KEY, EKS_CLUSTER_NAME_STAGING,
+#   SENTRY_AUTH_TOKEN, SENTRY_ORG, SENTRY_PROJECT,
+#   SLACK_WEBHOOK_URL (optional)
+# ============================================================
+
+name: Deploy — Staging
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+    inputs:
+      service:
+        description: 'Service to deploy (empty = all changed)'
+        required: false
+        default: ''
+      image_tag:
+        description: 'Image tag to deploy (default: latest)'
+        required: false
+        default: 'latest'
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+env:
+  ENVIRONMENT: staging
+  AWS_REGION: ${{ secrets.AWS_REGION || 'ap-south-1' }}
+  EKS_CLUSTER: ${{ secrets.EKS_CLUSTER_NAME_STAGING || 'priya-global-staging' }}
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION || 'ap-south-1' }}.amazonaws.com
+  IMAGE_PREFIX: priya-global
+  NAMESPACE_MAP: |
+    gateway:priya-core auth:priya-core tenant:priya-core channel_router:priya-core ai_engine:priya-core tenant_config:priya-core
+    whatsapp:priya-channels email:priya-channels voice:priya-channels social:priya-channels webchat:priya-channels sms:priya-channels telegram:priya-channels
+    billing:priya-business analytics:priya-business marketing:priya-business ecommerce:priya-business notification:priya-business plugins:priya-business handoff:priya-business leads:priya-business
+    conversation_intel:priya-advanced appointments:priya-advanced knowledge:priya-advanced voice_ai:priya-advanced video:priya-advanced rcs:priya-advanced workflows:priya-advanced advanced_analytics:priya-advanced ai_training:priya-advanced marketplace:priya-advanced
+    compliance:priya-ops health_monitor:priya-ops cdn_manager:priya-ops deployment:priya-ops
+
+jobs:
+  # ─── Pre-flight Checks ───
+  preflight:
+    name: Pre-flight Checks
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    outputs:
+      image_tag: ${{ steps.tag.outputs.image_tag }}
+      deploy_services: ${{ steps.services.outputs.list }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine image tag
+        id: tag
+        run: |
+          if [ -n "${{ github.event.inputs.image_tag }}" ]; then
+            echo "image_tag=${{ github.event.inputs.image_tag }}" >> $GITHUB_OUTPUT
+          else
+            SHA=$(echo "${{ github.sha }}" | cut -c1-8)
+            echo "image_tag=sha-${SHA}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Determine services to deploy
+        id: services
+        run: |
+          if [ -n "${{ github.event.inputs.service }}" ]; then
+            echo "list=${{ github.event.inputs.service }}" >> $GITHUB_OUTPUT
+          else
+            # Deploy all services
+            echo "list=gateway,auth,tenant,channel_router,ai_engine,tenant_config,whatsapp,email,voice,social,webchat,sms,telegram,billing,analytics,marketing,ecommerce,notification,plugins,handoff,leads,conversation_intel,appointments,knowledge,voice_ai,video,rcs,workflows,advanced_analytics,ai_training,marketplace,compliance,health_monitor,cdn_manager,deployment,dashboard" >> $GITHUB_OUTPUT
+          fi
+
+  # ─── Deploy Services ───
+  deploy:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: preflight
+    environment:
+      name: staging
+      url: https://staging.currentglobal.com
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --name ${{ env.EKS_CLUSTER }} \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Create Sentry release
+        if: ${{ secrets.SENTRY_AUTH_TOKEN != '' }}
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+        run: |
+          pip install sentry-cli
+          sentry-cli releases new "${{ needs.preflight.outputs.image_tag }}" \
+            --project ${{ secrets.SENTRY_PROJECT }} || true
+          sentry-cli releases set-commits "${{ needs.preflight.outputs.image_tag }}" --auto || true
+
+      - name: Rolling deploy — services
+        env:
+          IMAGE_TAG: ${{ needs.preflight.outputs.image_tag }}
+          SERVICES: ${{ needs.preflight.outputs.deploy_services }}
+        run: |
+          chmod +x scripts/deploy.sh
+          ./scripts/deploy.sh staging "$IMAGE_TAG" "$SERVICES"
+
+      - name: Wait for rollouts
+        run: |
+          IFS=',' read -ra SVCS <<< "${{ needs.preflight.outputs.deploy_services }}"
+          for svc in "${SVCS[@]}"; do
+            # Map service to namespace
+            NS=$(echo "${{ env.NAMESPACE_MAP }}" | tr ' ' '\n' | grep "^${svc}:" | cut -d: -f2)
+            NS=${NS:-priya-core}
+
+            if [ "$svc" = "dashboard" ]; then
+              NS="priya-core"
+            fi
+
+            echo "Waiting for $svc in $NS..."
+            kubectl rollout status deployment/priya-${svc//_/-} \
+              -n "$NS" \
+              --timeout=300s \
+              || echo "::warning::Rollout timeout for $svc"
+          done
+
+      - name: Finalize Sentry release
+        if: ${{ secrets.SENTRY_AUTH_TOKEN != '' }}
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+        run: |
+          sentry-cli releases finalize "${{ needs.preflight.outputs.image_tag }}" || true
+          sentry-cli releases deploys "${{ needs.preflight.outputs.image_tag }}" \
+            new -e staging || true
+
+  # ─── Smoke Tests ───
+  smoke-tests:
+    name: Smoke Tests
+    runs-on: ubuntu-latest
+    needs: deploy
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run smoke tests
+        env:
+          BASE_URL: https://staging-api.currentglobal.com
+          DASHBOARD_URL: https://staging.currentglobal.com
+        run: |
+          chmod +x scripts/smoke-test.sh
+          ./scripts/smoke-test.sh staging
+
+  # ─── Notify ───
+  notify:
+    name: Notify
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [deploy, smoke-tests]
+    steps:
+      - name: Slack notification
+        if: ${{ secrets.SLACK_WEBHOOK_URL != '' }}
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ needs.smoke-tests.result }}
+          fields: repo,message,commit,author,action,eventName,ref,workflow
+          text: |
+            *Staging Deploy* — ${{ needs.smoke-tests.result == 'success' && '✅ Success' || '❌ Failed' }}
+            Tag: `${{ needs.preflight.outputs.image_tag }}`
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Summary
+        run: |
+          echo "=== Staging Deploy Results ==="
+          echo "Deploy:      ${{ needs.deploy.result }}"
+          echo "Smoke Tests: ${{ needs.smoke-tests.result }}"
+          if [ "${{ needs.smoke-tests.result }}" = "failure" ]; then
+            echo "::error::Staging smoke tests failed — investigate before promoting to production"
+          fi

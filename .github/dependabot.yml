@@ -1,0 +1,186 @@
+# ============================================================
+# Dependabot Configuration for Priya Global
+#
+# Automated dependency updates for:
+#  - Python (pip)
+#  - Node.js (npm)
+#  - GitHub Actions
+#
+# Update Strategy:
+#  - Daily checks
+#  - Auto-merge for minor/patch updates
+#  - Manual approval for major updates
+#  - Grouped dependency updates
+# ============================================================
+
+version: 2
+
+updates:
+  # ─── Python Dependencies ───
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "daily"
+      time: "03:00"
+      timezone: "UTC"
+
+    # Version strategy
+    versioning-strategy: "auto"
+
+    # Auto-merge rules for minor and patch updates
+    auto-merge:
+      rules:
+        - match:
+            update-types:
+              - "minor"
+              - "patch"
+          automerge: true
+        - match:
+            dependency-type: "development"
+            update-types:
+              - "major"
+              - "minor"
+              - "patch"
+          automerge: true
+
+    # Group related dependencies
+    groups:
+      development:
+        dependency-type: "development"
+        update-types:
+          - "minor"
+          - "patch"
+      production:
+        dependency-type: "production"
+        update-types:
+          - "minor"
+          - "patch"
+
+    # Allow/ignore patterns
+    allow:
+      - dependency-type: "direct"
+
+    # Commit preferences
+    commit-message:
+      prefix: "deps(python)"
+      prefix-development: "deps(python-dev)"
+      include: "scope"
+
+    # PR preferences
+    pull-request-branch-name:
+      separator: "/"
+    labels:
+      - "dependencies"
+      - "python"
+    reviewers:
+      - "backend-team"
+    assignees:
+      - "backend-team"
+
+  # ─── Dashboard (Node.js) Dependencies ───
+  - package-ecosystem: "npm"
+    directory: "/dashboard"
+    schedule:
+      interval: "daily"
+      time: "03:00"
+      timezone: "UTC"
+
+    versioning-strategy: "auto"
+
+    # Auto-merge for minor/patch
+    auto-merge:
+      rules:
+        - match:
+            update-types:
+              - "minor"
+              - "patch"
+          automerge: true
+        - match:
+            dependency-type: "development"
+            update-types:
+              - "major"
+              - "minor"
+              - "patch"
+          automerge: true
+
+    # Group dependencies
+    groups:
+      production-dependencies:
+        dependency-type: "production"
+        update-types:
+          - "minor"
+          - "patch"
+      development-dependencies:
+        dependency-type: "development"
+        update-types:
+          - "minor"
+          - "patch"
+
+    # Commit preferences
+    commit-message:
+      prefix: "deps(dashboard)"
+      prefix-development: "deps(dashboard-dev)"
+      include: "scope"
+
+    # PR preferences
+    pull-request-branch-name:
+      separator: "/"
+    labels:
+      - "dependencies"
+      - "frontend"
+    reviewers:
+      - "frontend-team"
+    assignees:
+      - "frontend-team"
+
+  # ─── GitHub Actions ───
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+      timezone: "UTC"
+
+    # Auto-merge minor/patch updates
+    auto-merge:
+      rules:
+        - match:
+            update-types:
+              - "minor"
+              - "patch"
+          automerge: true
+
+    # Commit preferences
+    commit-message:
+      prefix: "ci(actions)"
+      include: "scope"
+
+    # PR preferences
+    labels:
+      - "dependencies"
+      - "ci"
+    reviewers:
+      - "devops-team"
+    milestone: 1
+
+  # ─── Docker Base Images (if using docker in dependabot) ───
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+      timezone: "UTC"
+
+    # Commit preferences
+    commit-message:
+      prefix: "deps(docker)"
+      include: "scope"
+
+    # PR preferences
+    labels:
+      - "dependencies"
+      - "docker"
+    reviewers:
+      - "devops-team"

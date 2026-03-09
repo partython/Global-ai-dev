@@ -1,0 +1,23 @@
+# Priya Global Background Worker Service
+
+# Core
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+pydantic-settings==2.1.0
+
+# Async
+asyncio-contextmanager==1.0.0
+aioredis==2.0.1
+redis==5.0.1
+
+# Monitoring & Metrics
+prometheus-client==0.19.0
+sentry-sdk==2.14.0
+
+# Scheduling
+croniter==2.0.1
+
+# Utilities
+python-dotenv==1.0.0
+pytz==2023.3.post1

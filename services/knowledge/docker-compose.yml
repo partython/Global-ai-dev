@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg15-latest
+    container_name: knowledge-db
+    environment:
+      POSTGRES_DB: priya_global
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: knowledge_local_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  knowledge-service:
+    build: .
+    container_name: knowledge-v2
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: priya_global
+      DB_USER: postgres
+      DB_PASSWORD: knowledge_local_pass
+      JWT_SECRET: dev-secret-key-change-in-production
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      CORS_ORIGINS: http://localhost:3000,http://localhost:8080
+      CHUNK_SIZE: 512
+      CHUNK_OVERLAP: 100
+    ports:
+      - "9030:9030"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./main.py:/app/main.py
+    command: python -m uvicorn main:app --host 0.0.0.0 --port 9030 --reload
+
+volumes:
+  postgres_data:

@@ -1,0 +1,309 @@
+# ============================================================
+# Priya Global Platform — Deploy to Production
+#
+# MANUAL TRIGGER ONLY — requires GitHub environment approval.
+# Blue/green strategy with automatic rollback.
+#
+# TEMPLATE: Ready to activate once AWS login is available.
+# Add these GitHub secrets:
+#   AWS_ACCOUNT_ID, AWS_REGION, AWS_ACCESS_KEY_ID,
+#   AWS_SECRET_ACCESS_KEY, EKS_CLUSTER_NAME_PRODUCTION,
+#   SENTRY_AUTH_TOKEN, SENTRY_ORG, SENTRY_PROJECT,
+#   SLACK_WEBHOOK_URL (optional)
+# ============================================================
+
+name: Deploy — Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Image tag to deploy (must exist in ECR)'
+        required: true
+      service:
+        description: 'Service to deploy (empty = all)'
+        required: false
+        default: ''
+      rollback:
+        description: 'Rollback to previous version'
+        required: false
+        default: 'false'
+        type: boolean
+      dry_run:
+        description: 'Dry run (validate without deploying)'
+        required: false
+        default: 'false'
+        type: boolean
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  ENVIRONMENT: production
+  AWS_REGION: ${{ secrets.AWS_REGION || 'ap-south-1' }}
+  EKS_CLUSTER: ${{ secrets.EKS_CLUSTER_NAME_PRODUCTION || 'priya-global-production' }}
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION || 'ap-south-1' }}.amazonaws.com
+  IMAGE_PREFIX: priya-global
+
+jobs:
+  # ─── Pre-flight Validation ───
+  validate:
+    name: Pre-flight Validation
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.validate.outputs.image_tag }}
+      deploy_services: ${{ steps.services.outputs.list }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Validate image exists in ECR
+        id: validate
+        run: |
+          TAG="${{ github.event.inputs.image_tag }}"
+          echo "Validating image tag: $TAG"
+
+          # Check ECR for the image
+          if aws ecr describe-images \
+            --repository-name "${{ env.IMAGE_PREFIX }}/gateway" \
+            --image-ids imageTag="$TAG" \
+            --region ${{ env.AWS_REGION }} 2>/dev/null; then
+            echo "✅ Image tag $TAG found in ECR"
+            echo "image_tag=$TAG" >> $GITHUB_OUTPUT
+          else
+            echo "::error::Image tag $TAG not found in ECR — build first"
+            exit 1
+          fi
+
+      - name: Determine services
+        id: services
+        run: |
+          if [ -n "${{ github.event.inputs.service }}" ]; then
+            echo "list=${{ github.event.inputs.service }}" >> $GITHUB_OUTPUT
+          else
+            echo "list=gateway,auth,tenant,channel_router,ai_engine,tenant_config,whatsapp,email,voice,social,webchat,sms,telegram,billing,analytics,marketing,ecommerce,notification,plugins,handoff,leads,conversation_intel,appointments,knowledge,voice_ai,video,rcs,workflows,advanced_analytics,ai_training,marketplace,compliance,health_monitor,cdn_manager,deployment,dashboard" >> $GITHUB_OUTPUT
+          fi
+
+  # ─── Snapshot Current State (for rollback) ───
+  snapshot:
+    name: Snapshot Current State
+    runs-on: ubuntu-latest
+    needs: validate
+    outputs:
+      rollback_manifest: ${{ steps.snapshot.outputs.manifest }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --name ${{ env.EKS_CLUSTER }} \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Save current deployment state
+        id: snapshot
+        run: |
+          echo "Capturing current deployment images for rollback..."
+          MANIFEST=""
+          for ns in priya-core priya-channels priya-business priya-advanced priya-ops; do
+            DEPLOYMENTS=$(kubectl get deployments -n "$ns" -o jsonpath='{range .items[*]}{.metadata.name}={.spec.template.spec.containers[0].image}{"\n"}{end}' 2>/dev/null || true)
+            if [ -n "$DEPLOYMENTS" ]; then
+              MANIFEST="${MANIFEST}${DEPLOYMENTS}\n"
+            fi
+          done
+          echo "$MANIFEST" > /tmp/rollback-manifest.txt
+          echo "manifest=/tmp/rollback-manifest.txt" >> $GITHUB_OUTPUT
+
+      - name: Upload rollback manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: rollback-manifest-${{ github.run_id }}
+          path: /tmp/rollback-manifest.txt
+          retention-days: 30
+
+  # ─── Deploy to Production ───
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [validate, snapshot]
+    if: ${{ github.event.inputs.dry_run != 'true' }}
+    environment:
+      name: production
+      url: https://app.currentglobal.com
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --name ${{ env.EKS_CLUSTER }} \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Create Sentry release
+        if: ${{ secrets.SENTRY_AUTH_TOKEN != '' }}
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+        run: |
+          echo "::add-mask::$SENTRY_AUTH_TOKEN"
+          pip install sentry-cli
+          sentry-cli releases new "${{ needs.validate.outputs.image_tag }}" \
+            --project ${{ secrets.SENTRY_PROJECT }} || true
+          sentry-cli releases set-commits "${{ needs.validate.outputs.image_tag }}" --auto || true
+
+      - name: Rolling deploy
+        id: deploy
+        env:
+          IMAGE_TAG: ${{ needs.validate.outputs.image_tag }}
+          SERVICES: ${{ needs.validate.outputs.deploy_services }}
+        run: |
+          chmod +x scripts/deploy.sh
+          ./scripts/deploy.sh production "$IMAGE_TAG" "$SERVICES"
+
+      - name: Wait for rollouts
+        id: rollout
+        run: |
+          NAMESPACE_MAP="gateway:priya-core auth:priya-core tenant:priya-core channel_router:priya-core ai_engine:priya-core tenant_config:priya-core whatsapp:priya-channels email:priya-channels voice:priya-channels social:priya-channels webchat:priya-channels sms:priya-channels telegram:priya-channels billing:priya-business analytics:priya-business marketing:priya-business ecommerce:priya-business notification:priya-business plugins:priya-business handoff:priya-business leads:priya-business conversation_intel:priya-advanced appointments:priya-advanced knowledge:priya-advanced voice_ai:priya-advanced video:priya-advanced rcs:priya-advanced workflows:priya-advanced advanced_analytics:priya-advanced ai_training:priya-advanced marketplace:priya-advanced compliance:priya-ops health_monitor:priya-ops cdn_manager:priya-ops deployment:priya-ops dashboard:priya-core"
+          FAILED=""
+
+          IFS=',' read -ra SVCS <<< "${{ needs.validate.outputs.deploy_services }}"
+          for svc in "${SVCS[@]}"; do
+            NS=$(echo "$NAMESPACE_MAP" | tr ' ' '\n' | grep "^${svc}:" | cut -d: -f2)
+            NS=${NS:-priya-core}
+            DEPLOY_NAME="priya-${svc//_/-}"
+
+            echo "Waiting for $DEPLOY_NAME in $NS..."
+            if ! kubectl rollout status deployment/"$DEPLOY_NAME" \
+              -n "$NS" \
+              --timeout=300s 2>/dev/null; then
+              echo "::error::Rollout failed for $svc"
+              FAILED="${FAILED}${svc},"
+            fi
+          done
+
+          if [ -n "$FAILED" ]; then
+            echo "failed_services=$FAILED" >> $GITHUB_OUTPUT
+            echo "rollout_status=failed" >> $GITHUB_OUTPUT
+          else
+            echo "rollout_status=success" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Auto-rollback on failure
+        if: steps.rollout.outputs.rollout_status == 'failed'
+        run: |
+          echo "::error::Rolling back failed services..."
+          FAILED="${{ steps.rollout.outputs.failed_services }}"
+          NAMESPACE_MAP="gateway:priya-core auth:priya-core tenant:priya-core channel_router:priya-core ai_engine:priya-core tenant_config:priya-core whatsapp:priya-channels email:priya-channels voice:priya-channels social:priya-channels webchat:priya-channels sms:priya-channels telegram:priya-channels billing:priya-business analytics:priya-business marketing:priya-business ecommerce:priya-business notification:priya-business plugins:priya-business handoff:priya-business leads:priya-business conversation_intel:priya-advanced appointments:priya-advanced knowledge:priya-advanced voice_ai:priya-advanced video:priya-advanced rcs:priya-advanced workflows:priya-advanced advanced_analytics:priya-advanced ai_training:priya-advanced marketplace:priya-advanced compliance:priya-ops health_monitor:priya-ops cdn_manager:priya-ops deployment:priya-ops dashboard:priya-core"
+
+          IFS=',' read -ra SVCS <<< "$FAILED"
+          for svc in "${SVCS[@]}"; do
+            [ -z "$svc" ] && continue
+            NS=$(echo "$NAMESPACE_MAP" | tr ' ' '\n' | grep "^${svc}:" | cut -d: -f2)
+            NS=${NS:-priya-core}
+            DEPLOY_NAME="priya-${svc//_/-}"
+
+            echo "Rolling back $DEPLOY_NAME in $NS..."
+            kubectl rollout undo deployment/"$DEPLOY_NAME" -n "$NS" || true
+          done
+
+          echo "::error::Production deploy failed — rolled back to previous version"
+          exit 1
+
+      - name: Finalize Sentry release
+        if: steps.rollout.outputs.rollout_status == 'success' && secrets.SENTRY_AUTH_TOKEN != ''
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+        run: |
+          sentry-cli releases finalize "${{ needs.validate.outputs.image_tag }}" || true
+          sentry-cli releases deploys "${{ needs.validate.outputs.image_tag }}" \
+            new -e production || true
+
+  # ─── Production Smoke Tests ───
+  smoke-tests:
+    name: Production Smoke Tests
+    runs-on: ubuntu-latest
+    needs: deploy
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run smoke tests
+        env:
+          BASE_URL: https://api.currentglobal.com
+          DASHBOARD_URL: https://app.currentglobal.com
+        run: |
+          chmod +x scripts/smoke-test.sh
+          ./scripts/smoke-test.sh production
+
+  # ─── Dry Run ───
+  dry-run:
+    name: Dry Run
+    runs-on: ubuntu-latest
+    needs: validate
+    if: ${{ github.event.inputs.dry_run == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --name ${{ env.EKS_CLUSTER }} \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Dry run deploy
+        run: |
+          echo "=== DRY RUN — No changes will be made ==="
+          echo "Image tag: ${{ needs.validate.outputs.image_tag }}"
+          echo "Services:  ${{ needs.validate.outputs.deploy_services }}"
+          echo ""
+          echo "Current deployments:"
+          for ns in priya-core priya-channels priya-business priya-advanced priya-ops; do
+            echo "--- $ns ---"
+            kubectl get deployments -n "$ns" -o wide 2>/dev/null || echo "  (namespace not found)"
+          done
+
+  # ─── Notify ───
+  notify:
+    name: Notify
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [deploy, smoke-tests]
+    steps:
+      - name: Slack notification
+        if: ${{ secrets.SLACK_WEBHOOK_URL != '' }}
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ needs.smoke-tests.result }}
+          fields: repo,message,commit,author,action,eventName,ref,workflow
+          text: |
+            *🚀 PRODUCTION DEPLOY* — ${{ needs.smoke-tests.result == 'success' && '✅ Success' || '❌ Failed' }}
+            Tag: `${{ needs.validate.outputs.image_tag }}`
+            Triggered by: ${{ github.actor }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

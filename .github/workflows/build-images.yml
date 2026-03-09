@@ -1,0 +1,403 @@
+# ============================================================
+# Priya Global Platform — Build & Push Docker Images
+#
+# Triggered: On push to main branch or manual dispatch
+# Builds and pushes Docker images to ECR:
+#  - Gateway (API Gateway)
+#  - Services (all microservices)
+#  - Dashboard (Frontend)
+#
+# Images are tagged with:
+#  - Commit SHA (short)
+#  - 'latest'
+#  - Version (if released)
+# ============================================================
+
+name: Build & Push Images
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'services/**'
+      - 'shared/**'
+      - 'dashboard/**'
+      - 'Dockerfile*'
+      - '.github/workflows/build-images.yml'
+  workflow_dispatch:
+    inputs:
+      push_images:
+        description: 'Push images to ECR'
+        required: false
+        default: 'true'
+        type: boolean
+      service:
+        description: 'Specific service to build (empty = all)'
+        required: false
+        default: ''
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ecr
+  PYTHON_BASE_IMAGE: "python:3.12-slim"
+  NODE_BASE_IMAGE: "node:20-alpine"
+
+jobs:
+  # ─── Determine Changed Services ───
+  detect-changes:
+    name: Detect Changed Services
+    runs-on: ubuntu-latest
+    outputs:
+      services: ${{ steps.detect.outputs.services }}
+      gateway: ${{ steps.detect.outputs.build_gateway }}
+      dashboard: ${{ steps.detect.outputs.build_dashboard }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed files
+        id: detect
+        run: |
+          # Get changed files
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ] && [ -n "${{ github.event.inputs.service }}" ]; then
+            SERVICES="${{ github.event.inputs.service }}"
+          else
+            # Get diff from previous commit
+            CHANGED=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || git ls-files)
+
+            # Extract service names
+            SERVICES=$(echo "$CHANGED" | grep -oP '(?<=services/)[^/]+' | sort -u | tr '\n' ',' | sed 's/,$//')
+
+            # Check if gateway, shared, or Dockerfile changed
+            if echo "$CHANGED" | grep -qE '^(Dockerfile|services/gateway|shared/)'; then
+              BUILD_GATEWAY="true"
+            else
+              BUILD_GATEWAY="false"
+            fi
+
+            # Check if dashboard changed
+            if echo "$CHANGED" | grep -qE '^dashboard/'; then
+              BUILD_DASHBOARD="true"
+            else
+              BUILD_DASHBOARD="false"
+            fi
+          fi
+
+          echo "services=$SERVICES" >> $GITHUB_OUTPUT
+          echo "build_gateway=${BUILD_GATEWAY:-true}" >> $GITHUB_OUTPUT
+          echo "build_dashboard=${BUILD_DASHBOARD:-true}" >> $GITHUB_OUTPUT
+
+          echo "Changed services: $SERVICES"
+          echo "Build gateway: ${BUILD_GATEWAY:-true}"
+          echo "Build dashboard: ${BUILD_DASHBOARD:-true}"
+
+  # ─── Setup Build Matrix ───
+  setup-matrix:
+    name: Setup Build Matrix
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    outputs:
+      service-matrix: ${{ steps.matrix.outputs.services }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate service matrix
+        id: matrix
+        run: |
+          # Get all services
+          SERVICES=$(ls -d services/*/ 2>/dev/null | xargs -I {} basename {} | tr '\n' ',' | sed 's/,$//')
+
+          # If specific services detected, use those
+          if [ -n "${{ needs.detect-changes.outputs.services }}" ]; then
+            SERVICES="${{ needs.detect-changes.outputs.services }}"
+          fi
+
+          # Convert to JSON array
+          JSON_MATRIX=$(echo "$SERVICES" | tr ',' '\n' | jq -R . | jq -s . | jq -c .)
+          echo "services=$JSON_MATRIX" >> $GITHUB_OUTPUT
+          echo "Service matrix: $JSON_MATRIX"
+
+  # ─── Build Gateway ───
+  build-gateway:
+    name: Build Gateway
+    runs-on: ubuntu-latest
+    if: needs.detect-changes.outputs.gateway == 'true'
+    needs: detect-changes
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      image: ${{ steps.build.outputs.image }}
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          role-session-name: github-actions-${{ github.run_id }}
+          aws-region: ${{ secrets.AWS_REGION || 'ap-south-1' }}
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+        id: login-ecr
+
+      - name: Generate image metadata
+        id: meta
+        run: |
+          ECR_REGISTRY="${{ steps.login-ecr.outputs.registry }}"
+          IMAGE_NAME="$ECR_REGISTRY/priya-global/gateway"
+
+          # Create tags
+          SHA_TAG="${{ github.sha }}" | cut -c1-8
+          TAGS="$IMAGE_NAME:sha-$SHA_TAG"
+          TAGS="$TAGS,$IMAGE_NAME:latest"
+
+          # Add version tag if this is a release
+          if [[ "${{ github.ref }}" == "refs/tags/"* ]]; then
+            VERSION="${{ github.ref#refs/tags/v}}"
+            TAGS="$TAGS,$IMAGE_NAME:v$VERSION"
+          fi
+
+          echo "image=$IMAGE_NAME" >> $GITHUB_OUTPUT
+          echo "tags=$TAGS" >> $GITHUB_OUTPUT
+
+      - name: Build and push gateway
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.service
+          push: ${{ github.event.inputs.push_images != 'false' && github.event_name == 'push' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+          build-args: |
+            SERVICE_NAME=gateway
+            PYTHON_BASE_IMAGE=${{ env.PYTHON_BASE_IMAGE }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Output image digest
+        run: |
+          echo "Built gateway image: ${{ steps.meta.outputs.image }}"
+          echo "Digest: ${{ steps.build.outputs.digest }}"
+
+  # ─── Build Services ───
+  build-services:
+    name: Build Service — ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    needs: [detect-changes, setup-matrix]
+    strategy:
+      matrix:
+        service: ${{ fromJson(needs.setup-matrix.outputs.service-matrix) }}
+      fail-fast: false
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          role-session-name: github-actions-${{ github.run_id }}
+          aws-region: ${{ secrets.AWS_REGION || 'ap-south-1' }}
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+        id: login-ecr
+
+      - name: Generate image metadata
+        id: meta
+        run: |
+          ECR_REGISTRY="${{ steps.login-ecr.outputs.registry }}"
+          IMAGE_NAME="$ECR_REGISTRY/priya-global/${{ matrix.service }}"
+
+          # Create tags
+          SHA_TAG="${{ github.sha }}" | cut -c1-8
+          TAGS="$IMAGE_NAME:sha-$SHA_TAG"
+          TAGS="$TAGS,$IMAGE_NAME:latest"
+
+          echo "image=$IMAGE_NAME" >> $GITHUB_OUTPUT
+          echo "tags=$TAGS" >> $GITHUB_OUTPUT
+
+      - name: Check if service exists
+        id: check
+        run: |
+          if [ -d "services/${{ matrix.service }}" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build and push ${{ matrix.service }}
+        if: steps.check.outputs.exists == 'true'
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.service
+          push: ${{ github.event.inputs.push_images != 'false' && github.event_name == 'push' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+          build-args: |
+            SERVICE_NAME=${{ matrix.service }}
+            PYTHON_BASE_IMAGE=${{ env.PYTHON_BASE_IMAGE }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Service build complete
+        if: steps.check.outputs.exists == 'true'
+        run: |
+          echo "✅ Built ${{ matrix.service }}"
+          echo "Image: ${{ steps.meta.outputs.image }}"
+          echo "Digest: ${{ steps.build.outputs.digest }}"
+
+      - name: Service not found
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          echo "⚠️  Service ${{ matrix.service }} not found — skipping"
+
+  # ─── Build Dashboard ───
+  build-dashboard:
+    name: Build Dashboard
+    runs-on: ubuntu-latest
+    if: needs.detect-changes.outputs.dashboard == 'true'
+    needs: detect-changes
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      image: ${{ steps.build.outputs.image }}
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          role-session-name: github-actions-${{ github.run_id }}
+          aws-region: ${{ secrets.AWS_REGION || 'ap-south-1' }}
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+        id: login-ecr
+
+      - name: Generate image metadata
+        id: meta
+        run: |
+          ECR_REGISTRY="${{ steps.login-ecr.outputs.registry }}"
+          IMAGE_NAME="$ECR_REGISTRY/priya-global/dashboard"
+
+          # Create tags
+          SHA_TAG="${{ github.sha }}" | cut -c1-8
+          TAGS="$IMAGE_NAME:sha-$SHA_TAG"
+          TAGS="$TAGS,$IMAGE_NAME:latest"
+
+          echo "image=$IMAGE_NAME" >> $GITHUB_OUTPUT
+          echo "tags=$TAGS" >> $GITHUB_OUTPUT
+
+      - name: Build and push dashboard
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: ./dashboard
+          file: Dockerfile.dashboard
+          push: ${{ github.event.inputs.push_images != 'false' && github.event_name == 'push' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+          build-args: |
+            NODE_BASE_IMAGE=${{ env.NODE_BASE_IMAGE }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Output image digest
+        run: |
+          echo "Built dashboard image: ${{ steps.meta.outputs.image }}"
+          echo "Digest: ${{ steps.build.outputs.digest }}"
+
+  # ─── Scan Built Images ───
+  scan-images:
+    name: Scan Docker Images
+    runs-on: ubuntu-latest
+    if: always() && (needs.build-gateway.result == 'success' || needs.build-services.result == 'success' || needs.build-dashboard.result == 'success')
+    needs: [build-gateway, build-services, build-dashboard]
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          role-session-name: github-actions-${{ github.run_id }}
+          aws-region: ${{ secrets.AWS_REGION || 'ap-south-1' }}
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+        id: login-ecr
+
+      - name: Run Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.login-ecr.outputs.registry }}/priya-global/gateway:latest
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload scan results
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  # ─── Build Summary ───
+  build-summary:
+    name: Build Summary
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [detect-changes, build-gateway, build-services, build-dashboard]
+    steps:
+      - name: Summarize build results
+        run: |
+          echo "=== Build Summary ===" | tee -a $GITHUB_STEP_SUMMARY
+          echo "Changed services: ${{ needs.detect-changes.outputs.services }}" | tee -a $GITHUB_STEP_SUMMARY
+          echo "" | tee -a $GITHUB_STEP_SUMMARY
+          echo "Gateway: ${{ needs.build-gateway.result }}" | tee -a $GITHUB_STEP_SUMMARY
+          echo "Services: ${{ needs.build-services.result }}" | tee -a $GITHUB_STEP_SUMMARY
+          echo "Dashboard: ${{ needs.build-dashboard.result }}" | tee -a $GITHUB_STEP_SUMMARY
+
+          if [ "${{ needs.build-gateway.result }}" == "failure" ] || \
+             [ "${{ needs.build-services.result }}" == "failure" ] || \
+             [ "${{ needs.build-dashboard.result }}" == "failure" ]; then
+            echo "::error::Build failed"
+            exit 1
+          fi
+
+          echo "✅ All builds completed successfully"

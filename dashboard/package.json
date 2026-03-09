@@ -1,0 +1,44 @@
+{
+  "name": "priya-global-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start -p 3000",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:headed": "playwright test --headed"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^0.10.4",
+    "pg": "^8.13.0",
+    "@nextui-org/react": "^2.2.0",
+    "@tailwindcss/forms": "^0.5.11",
+    "@tailwindcss/typography": "^0.5.19",
+    "bcryptjs": "^2.4.3",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.0.0",
+    "date-fns": "^3.0.0",
+    "framer-motion": "^11.5.6",
+    "jose": "^5.10.0",
+    "lucide-react": "^0.300.0",
+    "next": "14.2.0",
+    "next-auth": "^4.24.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "recharts": "^2.10.0",
+    "tailwind-merge": "^2.2.0",
+    "zustand": "^4.4.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.42.0",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^20.10.0",
+    "@types/react": "^18.2.0",
+    "autoprefixer": "^10.4.0",
+    "postcss": "^8.4.0",
+    "tailwindcss": "^3.4.0",
+    "typescript": "^5.3.0"
+  }
+}

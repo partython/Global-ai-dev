@@ -1,0 +1,43 @@
+# OpenTelemetry Distributed Tracing Dependencies
+# Add to your service's requirements.txt or base requirements.txt
+
+# Core OpenTelemetry
+opentelemetry-api==1.21.0
+opentelemetry-sdk==1.21.0
+
+# OTLP Exporter (gRPC to Collector)
+opentelemetry-exporter-otlp==1.21.0
+opentelemetry-exporter-otlp-proto-grpc==1.21.0
+
+# Automatic Instrumentation (auto-trace libraries)
+opentelemetry-instrumentation==0.42b0
+
+# Framework Instrumentation
+opentelemetry-instrumentation-fastapi==0.42b0
+opentelemetry-instrumentation-starlette==0.42b0
+opentelemetry-instrumentation-asgi==0.42b0
+
+# HTTP Client Instrumentation
+opentelemetry-instrumentation-httpx==0.42b0
+opentelemetry-instrumentation-requests==0.42b0
+
+# Database Instrumentation
+opentelemetry-instrumentation-sqlalchemy==0.42b0
+opentelemetry-instrumentation-asyncpg==0.42b0
+
+# Cache Instrumentation
+opentelemetry-instrumentation-redis==0.42b0
+
+# Context Propagation
+opentelemetry-propagator-jaeger==1.21.0
+opentelemetry-propagator-b3==1.21.0
+opentelemetry-propagator-jaeger-thrift==1.21.0
+
+# Optional: Jaeger SDKs for testing/local development
+# jaeger-client==4.8.0  # Use with opentelemetry-exporter-jaeger
+
+# Optional: Datadog Exporter
+# opentelemetry-exporter-datadog==0.42b0
+
+# Optional: Prometheus Exporter
+# opentelemetry-exporter-prometheus==0.42b0

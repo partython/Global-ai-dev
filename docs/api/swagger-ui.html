@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Priya Global Platform API Documentation</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@4.15.5/swagger-ui.css">
+    <link rel="icon" type="image/x-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='48' fill='%230066CC'/><text x='50' y='65' font-size='60' font-weight='bold' text-anchor='middle' fill='white'>P</text></svg>">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: #f5f5f5;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        body.dark-mode {
+            background: #1e1e1e;
+            color: #e0e0e0;
+        }
+
+        .swagger-ui {
+            background: white;
+        }
+
+        body.dark-mode .swagger-ui {
+            background: #1e1e1e;
+        }
+
+        body.dark-mode .topbar {
+            background: #2a2a2a;
+            border-bottom: 1px solid #444;
+        }
+
+        body.dark-mode .swagger-ui .scheme-container {
+            background: #2a2a2a;
+        }
+
+        body.dark-mode .swagger-ui .scheme-container .topbar {
+            background: #2a2a2a;
+        }
+
+        body.dark-mode .swagger-ui .btn {
+            background: #0066CC;
+            border-color: #0066CC;
+            color: white;
+        }
+
+        body.dark-mode .swagger-ui .btn:hover {
+            background: #0052a3;
+            border-color: #0052a3;
+        }
+
+        body.dark-mode .swagger-ui .information-container {
+            background: #2a2a2a;
+        }
+
+        body.dark-mode .swagger-ui .model-box {
+            background: #2a2a2a;
+        }
+
+        body.dark-mode .swagger-ui .tab {
+            color: #e0e0e0;
+        }
+
+        body.dark-mode .swagger-ui .tab.active {
+            color: #0066CC;
+            border-bottom-color: #0066CC;
+        }
+
+        .topbar {
+            background: white;
+            border-bottom: 1px solid #e0e0e0;
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .topbar-branding {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex: 1;
+        }
+
+        .topbar-logo {
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, #0066CC 0%, #004499 100%);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 18px;
+            box-shadow: 0 2px 8px rgba(0, 102, 204, 0.2);
+        }
+
+        .topbar-title {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .topbar-title h1 {
+            font-size: 18px;
+            font-weight: 600;
+            margin: 0;
+            color: #1a1a1a;
+        }
+
+        body.dark-mode .topbar-title h1 {
+            color: #e0e0e0;
+        }
+
+        .topbar-title p {
+            font-size: 12px;
+            color: #666;
+            margin: 2px 0 0 0;
+        }
+
+        body.dark-mode .topbar-title p {
+            color: #999;
+        }
+
+        .topbar-controls {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .theme-toggle {
+            background: #f0f0f0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 6px 12px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+            color: #333;
+            transition: all 0.2s;
+        }
+
+        body.dark-mode .theme-toggle {
+            background: #333;
+            border-color: #555;
+            color: #e0e0e0;
+        }
+
+        .theme-toggle:hover {
+            background: #e0e0e0;
+            border-color: #ccc;
+        }
+
+        body.dark-mode .theme-toggle:hover {
+            background: #444;
+            border-color: #666;
+        }
+
+        .theme-toggle.active {
+            background: #0066CC;
+            border-color: #0066CC;
+            color: white;
+        }
+
+        .api-info-banner {
+            background: linear-gradient(135deg, #0066CC 0%, #004499 100%);
+            color: white;
+            padding: 30px 20px;
+            margin: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 102, 204, 0.15);
+        }
+
+        .api-info-banner h2 {
+            margin-bottom: 8px;
+            font-size: 24px;
+            font-weight: 600;
+        }
+
+        .api-info-banner p {
+            font-size: 14px;
+            opacity: 0.95;
+            margin: 4px 0;
+        }
+
+        .api-info-banner code {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+        }
+
+        .endpoint-section {
+            margin: 20px 0;
+        }
+
+        .swagger-ui .opblock-tag {
+            background: #f5f5f5;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        body.dark-mode .swagger-ui .opblock-tag {
+            background: #2a2a2a;
+            border-bottom-color: #444;
+        }
+
+        .swagger-ui .opblock-tag-section .opblock-tag {
+            color: #1a1a1a;
+            font-weight: 600;
+        }
+
+        body.dark-mode .swagger-ui .opblock-tag-section .opblock-tag {
+            color: #e0e0e0;
+        }
+
+        .swagger-ui .opblock {
+            border: 1px solid #e0e0e0;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+
+        body.dark-mode .swagger-ui .opblock {
+            border-color: #444;
+        }
+
+        .swagger-ui .opblock.opblock-get {
+            border-color: #87ceeb;
+        }
+
+        .swagger-ui .opblock.opblock-post {
+            border-color: #90ee90;
+        }
+
+        .swagger-ui .opblock.opblock-patch {
+            border-color: #ffa500;
+        }
+
+        .swagger-ui .opblock.opblock-delete {
+            border-color: #ff6b6b;
+        }
+
+        .swagger-ui .parameter__name {
+            font-weight: 600;
+        }
+
+        .info-container {
+            background: white;
+            border-radius: 8px;
+            margin: 20px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        }
+
+        body.dark-mode .info-container {
+            background: #2a2a2a;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        .swagger-ui .model-container {
+            background: transparent;
+        }
+
+        /* Response highlighting */
+        .swagger-ui .response-col_status {
+            font-weight: 600;
+        }
+
+        .swagger-ui .response-col_status.http_200,
+        .swagger-ui .response-col_status.http_201,
+        .swagger-ui .response-col_status.http_204 {
+            color: #28a745;
+        }
+
+        .swagger-ui .response-col_status.http_400,
+        .swagger-ui .response-col_status.http_401,
+        .swagger-ui .response-col_status.http_403,
+        .swagger-ui .response-col_status.http_404 {
+            color: #ffc107;
+        }
+
+        .swagger-ui .response-col_status.http_500,
+        .swagger-ui .response-col_status.http_502,
+        .swagger-ui .response-col_status.http_503 {
+            color: #dc3545;
+        }
+
+        /* Footer */
+        .swagger-ui footer {
+            background: #f5f5f5;
+            border-top: 1px solid #e0e0e0;
+            padding: 20px;
+            text-align: center;
+            color: #666;
+            font-size: 12px;
+            margin-top: 40px;
+        }
+
+        body.dark-mode .swagger-ui footer {
+            background: #2a2a2a;
+            border-top-color: #444;
+            color: #999;
+        }
+
+        /* Scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+
+        body.dark-mode ::-webkit-scrollbar-track {
+            background: #2a2a2a;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #0066CC;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #0052a3;
+        }
+
+        /* Animation */
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .swagger-ui {
+            animation: fadeIn 0.3s ease-in;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .topbar {
+                flex-direction: column;
+                gap: 12px;
+            }
+
+            .topbar-branding {
+                width: 100%;
+            }
+
+            .topbar-controls {
+                width: 100%;
+                justify-content: flex-start;
+            }
+
+            .api-info-banner {
+                margin: 15px 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="topbar">
+        <div class="topbar-branding">
+            <div class="topbar-logo">P</div>
+            <div class="topbar-title">
+                <h1>Priya Global Platform</h1>
+                <p>API v1.0.0 - Multi-Channel AI Sales Platform</p>
+            </div>
+        </div>
+        <div class="topbar-controls">
+            <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()">🌙 Dark Mode</button>
+        </div>
+    </div>
+
+    <div id="swagger-ui-container"></div>
+
+    <div style="text-align: center; padding: 40px 20px; background: white; margin: 40px 20px; border-radius: 8px;">
+        <h2 style="color: #333; margin-bottom: 16px;">Getting Started</h2>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; max-width: 1000px; margin: 0 auto;">
+            <div style="padding: 20px; border: 1px solid #e0e0e0; border-radius: 6px; background: #f9f9f9;">
+                <h3 style="color: #0066CC; margin-bottom: 10px;">1. Authentication</h3>
+                <p style="font-size: 14px; color: #666; line-height: 1.6;">Register a user or login to get JWT tokens. Use the access token in Authorization header for all requests.</p>
+            </div>
+            <div style="padding: 20px; border: 1px solid #e0e0e0; border-radius: 6px; background: #f9f9f9;">
+                <h3 style="color: #0066CC; margin-bottom: 10px;">2. Multi-tenancy</h3>
+                <p style="font-size: 14px; color: #666; line-height: 1.6;">All requests are tenant-scoped. X-Tenant-ID is automatically injected by the gateway.</p>
+            </div>
+            <div style="padding: 20px; border: 1px solid #e0e0e0; border-radius: 6px; background: #f9f9f9;">
+                <h3 style="color: #0066CC; margin-bottom: 10px;">3. Rate Limiting</h3>
+                <p style="font-size: 14px; color: #666; line-height: 1.6;">Plans have different rate limits. Check X-RateLimit-* headers in responses.</p>
+            </div>
+            <div style="padding: 20px; border: 1px solid #e0e0e0; border-radius: 6px; background: #f9f9f9;">
+                <h3 style="color: #0066CC; margin-bottom: 10px;">4. Channels</h3>
+                <p style="font-size: 14px; color: #666; line-height: 1.6;">Connect WhatsApp, Email, SMS, Voice, Social, and other channels to reach customers.</p>
+            </div>
+            <div style="padding: 20px; border: 1px solid #e0e0e0; border-radius: 6px; background: #f9f9f9;">
+                <h3 style="color: #0066CC; margin-bottom: 10px;">5. AI Integration</h3>
+                <p style="font-size: 14px; color: #666; line-height: 1.6;">Use the AI Engine to provide intelligent responses with knowledge base support.</p>
+            </div>
+            <div style="padding: 20px; border: 1px solid #e0e0e0; border-radius: 6px; background: #f9f9f9;">
+                <h3 style="color: #0066CC; margin-bottom: 10px;">6. Analytics</h3>
+                <p style="font-size: 14px; color: #666; line-height: 1.6;">Track conversations, messages, and customer satisfaction with real-time dashboards.</p>
+            </div>
+        </div>
+    </div>
+
+    <div style="text-align: center; padding: 20px; color: #666; font-size: 12px; margin-top: 40px;">
+        <p>
+            Priya Global Platform |
+            <a href="https://priyaai.com" style="color: #0066CC; text-decoration: none;">Website</a> |
+            <a href="https://priyaai.com/support" style="color: #0066CC; text-decoration: none;">Support</a> |
+            <a href="https://github.com/priyaai" style="color: #0066CC; text-decoration: none;">GitHub</a>
+        </p>
+        <p style="margin-top: 8px;">© 2024 Priya Global. All rights reserved.</p>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@4.15.5/swagger-ui-bundle.js" integrity="sha384-Tc8RJamm/EO0VrXOCMz8fWLARrSAUXqVHBnKN5L+nGvhxJzuMJmWl6xBqsM60R5w0" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@4.15.5/swagger-ui-standalone-preset.js" integrity="sha384-1J2K+1wL5ePj+EYLuwPXHV8LO5q/m6n7xArKXZ5GwxCxXLyL5ELt/4KTvQzq0Zzgg" crossorigin="anonymous"></script>
+    <script>
+        // Detect if running locally or in production
+        const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        const specUrl = isLocal
+            ? '/docs/openapi.yaml'
+            : 'https://api.priyaai.com/docs/openapi.yaml';
+
+        window.onload = function() {
+            const ui = SwaggerUIBundle({
+                url: specUrl,
+                dom_id: '#swagger-ui-container',
+                deepLinking: true,
+                presets: [
+                    SwaggerUIBundle.presets.apis,
+                    SwaggerUIStandalonePreset
+                ],
+                plugins: [
+                    SwaggerUIBundle.plugins.DownloadUrl
+                ],
+                layout: "StandaloneLayout",
+                defaultModelsExpandDepth: 1,
+                defaultModelExpandDepth: 1,
+                tryItOutEnabled: true,
+                supportedSubmitMethods: ['get', 'post', 'put', 'delete', 'patch', 'head', 'options', 'trace'],
+                showRequestHeaders: true,
+                filter: true,
+                validatorUrl: null,
+                withCredentials: false,
+                requestInterceptor: (request) => {
+                    // Add custom headers to all requests
+                    request.headers['X-Request-ID'] = generateUUID();
+                    return request;
+                },
+                responseInterceptor: (response) => {
+                    // Log rate limit headers
+                    if (response.headers['x-ratelimit-limit']) {
+                        console.log('Rate Limit:', {
+                            limit: response.headers['x-ratelimit-limit'],
+                            remaining: response.headers['x-ratelimit-remaining'],
+                            reset: response.headers['x-ratelimit-reset']
+                        });
+                    }
+                    return response;
+                }
+            });
+
+            window.ui = ui;
+
+            // Load dark mode preference
+            loadThemePreference();
+        }
+
+        function toggleTheme() {
+            const body = document.body;
+            const themeToggle = document.getElementById('themeToggle');
+
+            if (body.classList.contains('dark-mode')) {
+                body.classList.remove('dark-mode');
+                themeToggle.textContent = '🌙 Dark Mode';
+                themeToggle.classList.remove('active');
+                localStorage.setItem('priya-api-theme', 'light');
+            } else {
+                body.classList.add('dark-mode');
+                themeToggle.textContent = '☀️ Light Mode';
+                themeToggle.classList.add('active');
+                localStorage.setItem('priya-api-theme', 'dark');
+            }
+        }
+
+        function loadThemePreference() {
+            const theme = localStorage.getItem('priya-api-theme') || 'light';
+            const themeToggle = document.getElementById('themeToggle');
+
+            if (theme === 'dark') {
+                document.body.classList.add('dark-mode');
+                themeToggle.textContent = '☀️ Light Mode';
+                themeToggle.classList.add('active');
+            }
+        }
+
+        function generateUUID() {
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                var r = Math.random() * 16 | 0,
+                    v = c === 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            // Ctrl/Cmd + K to search
+            if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+                e.preventDefault();
+                document.querySelector('.topbar input')?.focus();
+            }
+            // Ctrl/Cmd + T to toggle theme
+            if ((e.ctrlKey || e.metaKey) && e.key === 't') {
+                e.preventDefault();
+                toggleTheme();
+            }
+        });
+
+        // Log initialization
+        console.log('%cPriya Global API Documentation', 'font-size: 16px; font-weight: bold; color: #0066CC;');
+        console.log('API Spec URL:', specUrl);
+        console.log('Keyboard Shortcuts: Ctrl+K (search), Ctrl+T (toggle theme)');
+    </script>
+</body>
+</html>

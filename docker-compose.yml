@@ -1,0 +1,988 @@
+# ============================================================
+# Priya Global Platform — Docker Compose
+#
+# Local development & testing stack.
+# Includes all 36 microservices + dashboard + infrastructure.
+#
+# Quick start:
+#   docker compose up -d postgres redis kafka
+#   docker compose up -d gateway auth tenant
+#   docker compose up -d dashboard
+#
+# Full platform:
+#   docker compose up -d
+#
+# Profiles:
+#   core     — gateway, auth, tenant, channel-router, ai-engine
+#   channels — whatsapp, email, voice, social, webchat, sms, telegram
+#   business — billing, analytics, marketing, ecommerce, notification
+#   advanced — conversation-intel, leads, knowledge, voice-ai, video, rcs, workflows
+#   ops      — health-monitor, cdn-manager, deployment, compliance
+#   infra    — postgres, redis, kafka, zookeeper
+# ============================================================
+
+x-python-service: &python-service
+  build:
+    context: .
+    dockerfile: Dockerfile.service
+  restart: unless-stopped
+  networks:
+    - priya-net
+  volumes:
+    - ./config:/app/config:ro
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  env_file:
+    - .env
+  environment: &common-env
+    ENVIRONMENT: development
+    DATABASE_URL: postgresql+asyncpg://priya:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/priya_global
+    REDIS_URL: redis://redis:6379/0
+    KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    KAFKA_SECURITY_PROTOCOL: PLAINTEXT
+    SENTRY_DSN: ${SENTRY_DSN:-}
+    SENTRY_ENABLED: ${SENTRY_ENABLED:-false}
+    LOG_LEVEL: INFO
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  # ─── Infrastructure ───
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: priya-postgres
+    profiles: ["infra", "core"]
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: priya_global
+      POSTGRES_USER: priya
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set - see .env.example}
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U priya -d priya_global"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - priya-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: priya-redis
+    profiles: ["infra", "core"]
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - priya-net
+
+  kafka:
+    image: apache/kafka:3.9.0
+    container_name: priya-kafka
+    profiles: ["infra", "core"]
+    restart: unless-stopped
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_NUM_PARTITIONS: 6
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      CLUSTER_ID: "priya-local-dev-kafka-001"
+    volumes:
+      - kafka_data:/tmp/kraft-combined-logs
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - priya-net
+
+  # ─── Layer 0: API Gateway ───
+
+  gateway:
+    <<: *python-service
+    container_name: priya-gateway
+    profiles: ["core"]
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: gateway
+        SERVICE_PORT: "9000"
+        WORKERS: "2"
+    ports:
+      - "9000:9000"
+    environment:
+      <<: *common-env
+      SERVICE_NAME: gateway
+      SERVICE_PORT: "9000"
+
+  # ─── Layer 1: Auth & Tenant ───
+
+  auth:
+    <<: *python-service
+    container_name: priya-auth
+    profiles: ["core"]
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: auth
+        SERVICE_PORT: "9001"
+        WORKERS: "2"
+    ports:
+      - "9001:9001"
+    environment:
+      <<: *common-env
+      SERVICE_NAME: auth
+      SERVICE_PORT: "9001"
+
+  tenant:
+    <<: *python-service
+    container_name: priya-tenant
+    profiles: ["core"]
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: tenant
+        SERVICE_PORT: "9002"
+        WORKERS: "2"
+    ports:
+      - "9002:9002"
+    environment:
+      <<: *common-env
+      SERVICE_NAME: tenant
+      SERVICE_PORT: "9002"
+
+  # ─── Layer 2: Routing & AI ───
+
+  channel-router:
+    <<: *python-service
+    container_name: priya-channel-router
+    profiles: ["core"]
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: channel_router
+        SERVICE_PORT: "9003"
+        WORKERS: "2"
+    ports:
+      - "9003:9003"
+    environment:
+      <<: *common-env
+      SERVICE_NAME: channel-router
+      SERVICE_PORT: "9003"
+
+  ai-engine:
+    <<: *python-service
+    container_name: priya-ai-engine
+    profiles: ["core"]
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: ai_engine
+        SERVICE_PORT: "9004"
+        WORKERS: "2"
+    ports:
+      - "9004:9004"
+    environment:
+      <<: *common-env
+      SERVICE_NAME: ai-engine
+      SERVICE_PORT: "9004"
+
+  # ─── Layer 3: Channels ───
+
+  whatsapp:
+    <<: *python-service
+    container_name: priya-whatsapp
+    profiles: ["channels"]
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: whatsapp
+        SERVICE_PORT: "9010"
+    ports:
+      - "9010:9010"
+    environment:
+      <<: *common-env
+      SERVICE_NAME: whatsapp
+      SERVICE_PORT: "9010"
+
+  email:
+    <<: *python-service
+    container_name: priya-email
+    profiles: ["channels"]
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: email
+        SERVICE_PORT: "9011"
+    ports:
+      - "9011:9011"
+    environment:
+      <<: *common-env
+      SERVICE_NAME: email
+      SERVICE_PORT: "9011"
+
+  voice:
+    <<: *python-service
+    container_name: priya-voice
+    profiles: ["channels"]
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: voice
+        SERVICE_PORT: "9012"
+    ports:
+      - "9012:9012"
+    environment:
+      <<: *common-env
+      SERVICE_NAME: voice
+      SERVICE_PORT: "9012"
+
+  social:
+    <<: *python-service
+    container_name: priya-social
+    profiles: ["channels"]
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: social
+        SERVICE_PORT: "9013"
+    ports:
+      - "9013:9013"
+    environment:
+      <<: *common-env
+      SERVICE_NAME: social
+      SERVICE_PORT: "9013"
+    networks:
+      priya-net:
+        aliases:
+          - facebook
+          - instagram
+
+  webchat:
+    <<: *python-service
+    container_name: priya-webchat
+    profiles: ["channels"]
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: webchat
+        SERVICE_PORT: "9014"
+    ports:
+      - "9014:9014"
+    environment:
+      <<: *common-env
+      SERVICE_NAME: webchat
+      SERVICE_PORT: "9014"
+
+  sms:
+    <<: *python-service
+    container_name: priya-sms
+    profiles: ["channels"]
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: sms
+        SERVICE_PORT: "9015"
+    ports:
+      - "9015:9015"
+    environment:
+      <<: *common-env
+      SERVICE_NAME: sms
+      SERVICE_PORT: "9015"
+
+  telegram:
+    <<: *python-service
+    container_name: priya-telegram
+    profiles: ["channels"]
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: telegram
+        SERVICE_PORT: "9016"
+    ports:
+      - "9016:9016"
+    environment:
+      <<: *common-env
+      SERVICE_NAME: telegram
+      SERVICE_PORT: "9016"
+
+  # ─── Layer 4: Business Services ───
+
+  billing:
+    <<: *python-service
+    container_name: priya-billing
+    profiles: ["business"]
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: billing
+        SERVICE_PORT: "9020"
+    ports:
+      - "9020:9020"
+    environment:
+      <<: *common-env
+      SERVICE_NAME: billing
+      SERVICE_PORT: "9020"
+
+  analytics:
+    <<: *python-service
+    container_name: priya-analytics
+    profiles: ["business"]
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: analytics
+        SERVICE_PORT: "9021"
+    ports:
+      - "9021:9021"
+    environment:
+      <<: *common-env
+      SERVICE_NAME: analytics
+      SERVICE_PORT: "9021"
+
+  marketing:
+    <<: *python-service
+    container_name: priya-marketing
+    profiles: ["business"]
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: marketing
+        SERVICE_PORT: "9022"
+    ports:
+      - "9022:9022"
+    environment:
+      <<: *common-env
+      SERVICE_NAME: marketing
+      SERVICE_PORT: "9022"
+
+  ecommerce:
+    <<: *python-service
+    container_name: priya-ecommerce
+    profiles: ["business"]
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: ecommerce
+        SERVICE_PORT: "9023"
+    ports:
+      - "9023:9023"
+    environment:
+      <<: *common-env
+      SERVICE_NAME: ecommerce
+      SERVICE_PORT: "9023"
+
+  notification:
+    <<: *python-service
+    container_name: priya-notification
+    profiles: ["business"]
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: notification
+        SERVICE_PORT: "9024"
+    ports:
+      - "9024:9024"
+    environment:
+      <<: *common-env
+      SERVICE_NAME: notification
+      SERVICE_PORT: "9024"
+
+  plugins:
+    <<: *python-service
+    container_name: priya-plugins
+    profiles: ["business"]
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: plugins
+        SERVICE_PORT: "9025"
+    ports:
+      - "9025:9025"
+    environment:
+      <<: *common-env
+      SERVICE_NAME: plugins
+      SERVICE_PORT: "9025"
+
+  handoff:
+    <<: *python-service
+    container_name: priya-handoff
+    profiles: ["business"]
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: handoff
+        SERVICE_PORT: "9026"
+    ports:
+      - "9026:9026"
+    environment:
+      <<: *common-env
+      SERVICE_NAME: handoff
+      SERVICE_PORT: "9026"
+
+  leads:
+    <<: *python-service
+    container_name: priya-leads
+    profiles: ["business"]
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: leads
+        SERVICE_PORT: "9027"
+    ports:
+      - "9027:9027"
+    environment:
+      <<: *common-env
+      SERVICE_NAME: leads
+      SERVICE_PORT: "9027"
+
+  # ─── Layer 5: Advanced Features ───
+
+  conversation-intel:
+    <<: *python-service
+    container_name: priya-conversation-intel
+    profiles: ["advanced"]
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: conversation_intel
+        SERVICE_PORT: "9028"
+    ports:
+      - "9028:9028"
+    environment:
+      <<: *common-env
+      SERVICE_NAME: conversation-intel
+      SERVICE_PORT: "9028"
+
+  appointments:
+    <<: *python-service
+    container_name: priya-appointments
+    profiles: ["advanced"]
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: appointments
+        SERVICE_PORT: "9029"
+    ports:
+      - "9029:9029"
+    environment:
+      <<: *common-env
+      SERVICE_NAME: appointments
+      SERVICE_PORT: "9029"
+
+  knowledge:
+    <<: *python-service
+    container_name: priya-knowledge
+    profiles: ["advanced"]
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: knowledge
+        SERVICE_PORT: "9030"
+        WORKERS: "4"
+    ports:
+      - "9030:9030"
+    environment:
+      <<: *common-env
+      SERVICE_NAME: knowledge
+      SERVICE_PORT: "9030"
+
+  voice-ai:
+    <<: *python-service
+    container_name: priya-voice-ai
+    profiles: ["advanced"]
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: voice_ai
+        SERVICE_PORT: "9031"
+    ports:
+      - "9031:9031"
+    environment:
+      <<: *common-env
+      SERVICE_NAME: voice-ai
+      SERVICE_PORT: "9031"
+
+  video:
+    <<: *python-service
+    container_name: priya-video
+    profiles: ["advanced"]
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: video
+        SERVICE_PORT: "9032"
+    ports:
+      - "9032:9032"
+    environment:
+      <<: *common-env
+      SERVICE_NAME: video
+      SERVICE_PORT: "9032"
+
+  rcs:
+    <<: *python-service
+    container_name: priya-rcs
+    profiles: ["advanced"]
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: rcs
+        SERVICE_PORT: "9033"
+    ports:
+      - "9033:9033"
+    environment:
+      <<: *common-env
+      SERVICE_NAME: rcs
+      SERVICE_PORT: "9033"
+
+  memory:
+    <<: *python-service
+    container_name: priya-memory
+    profiles: ["core"]
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: memory
+        SERVICE_PORT: "9034"
+        WORKERS: "2"
+    ports:
+      - "9034:9034"
+    environment:
+      <<: *common-env
+      SERVICE_NAME: memory
+      SERVICE_PORT: "9034"
+
+  translation:
+    <<: *python-service
+    container_name: priya-translation
+    profiles: ["advanced"]
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: translation
+        SERVICE_PORT: "9044"
+        WORKERS: "2"
+    ports:
+      - "9044:9044"
+    environment:
+      <<: *common-env
+      SERVICE_NAME: translation
+      SERVICE_PORT: "9044"
+
+  rest_connector:
+    <<: *python-service
+    container_name: priya-rest-connector
+    profiles: ["advanced"]
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: rest_connector
+        SERVICE_PORT: "9035"
+        WORKERS: "2"
+    ports:
+      - "9035:9035"
+    environment:
+      <<: *common-env
+      SERVICE_NAME: rest_connector
+      SERVICE_PORT: "9035"
+
+  developer_portal:
+    <<: *python-service
+    container_name: priya-developer-portal
+    profiles: ["advanced"]
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: developer_portal
+        SERVICE_PORT: "9036"
+        WORKERS: "2"
+    ports:
+      - "9036:9036"
+    environment:
+      <<: *common-env
+      SERVICE_NAME: developer_portal
+      SERVICE_PORT: "9036"
+
+  workflows:
+    <<: *python-service
+    container_name: priya-workflow
+    profiles: ["advanced"]
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: workflows
+        SERVICE_PORT: "9045"
+    ports:
+      - "9045:9045"
+    environment:
+      <<: *common-env
+      SERVICE_NAME: workflows
+      SERVICE_PORT: "9045"
+
+  advanced-analytics:
+    <<: *python-service
+    container_name: priya-advanced-analytics
+    profiles: ["advanced"]
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: advanced_analytics
+        SERVICE_PORT: "9046"
+    ports:
+      - "9046:9046"
+    environment:
+      <<: *common-env
+      SERVICE_NAME: advanced-analytics
+      SERVICE_PORT: "9046"
+
+  ai-training:
+    <<: *python-service
+    container_name: priya-ai-training
+    profiles: ["advanced"]
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: ai_training
+        SERVICE_PORT: "9047"
+    ports:
+      - "9047:9047"
+    environment:
+      <<: *common-env
+      SERVICE_NAME: ai-training
+      SERVICE_PORT: "9047"
+
+  marketplace:
+    <<: *python-service
+    container_name: priya-marketplace
+    profiles: ["advanced"]
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: marketplace
+        SERVICE_PORT: "9037"
+    ports:
+      - "9037:9037"
+    environment:
+      <<: *common-env
+      SERVICE_NAME: marketplace
+      SERVICE_PORT: "9037"
+
+  # ─── Layer 6: Platform Operations ───
+
+  compliance:
+    <<: *python-service
+    container_name: priya-compliance
+    profiles: ["ops"]
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: compliance
+        SERVICE_PORT: "9038"
+    ports:
+      - "9038:9038"
+    environment:
+      <<: *common-env
+      SERVICE_NAME: compliance
+      SERVICE_PORT: "9038"
+
+  health-monitor:
+    <<: *python-service
+    container_name: priya-health-monitor
+    profiles: ["ops"]
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: health_monitor
+        SERVICE_PORT: "9039"
+    ports:
+      - "9039:9039"
+    environment:
+      <<: *common-env
+      SERVICE_NAME: health-monitor
+      SERVICE_PORT: "9039"
+
+  cdn-manager:
+    <<: *python-service
+    container_name: priya-cdn-manager
+    profiles: ["ops"]
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: cdn_manager
+        SERVICE_PORT: "9040"
+    ports:
+      - "9040:9040"
+    environment:
+      <<: *common-env
+      SERVICE_NAME: cdn-manager
+      SERVICE_PORT: "9040"
+
+  deployment:
+    <<: *python-service
+    container_name: priya-deployment
+    profiles: ["ops"]
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: deployment
+        SERVICE_PORT: "9041"
+    ports:
+      - "9041:9041"
+    environment:
+      <<: *common-env
+      SERVICE_NAME: deployment
+      SERVICE_PORT: "9041"
+
+  tenant-config:
+    <<: *python-service
+    container_name: priya-tenant-config
+    profiles: ["core"]
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: tenant_config
+        SERVICE_PORT: "9042"
+        WORKERS: "3"
+    ports:
+      - "9042:9042"
+    environment:
+      <<: *common-env
+      SERVICE_NAME: tenant-config
+      SERVICE_PORT: "9042"
+
+  worker:
+    <<: *python-service
+    container_name: priya-worker
+    profiles: ["core"]
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: worker
+        SERVICE_PORT: "9043"
+        WORKERS: "1"
+    ports:
+      - "9043:9043"
+    environment:
+      <<: *common-env
+      SERVICE_NAME: worker
+      SERVICE_PORT: "9043"
+      WORKER_CONCURRENCY: "5"
+      WORKER_QUEUES: "critical,high,normal,low"
+
+  # ─── Wallet (prepaid credits / Razorpay) ───
+
+  wallet:
+    <<: *python-service
+    container_name: priya-wallet
+    profiles: ["business"]
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: wallet
+        SERVICE_PORT: "9050"
+    ports:
+      - "9050:9050"
+    environment:
+      <<: *common-env
+      SERVICE_NAME: wallet
+      SERVICE_PORT: "9050"
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
+      RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:-}
+
+  # ─── Database Migration (runs once before app services) ───
+
+  migration:
+    <<: *python-service
+    container_name: priya-migration
+    profiles: ["core"]
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: migration
+    restart: "no"
+    working_dir: /app
+    command: ["python", "-m", "alembic", "-c", "shared/migrations/alembic.ini", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ─── Dashboard ───
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:9000
+        NEXT_PUBLIC_SENTRY_DSN: ${SENTRY_DSN:-}
+        NEXT_PUBLIC_ENVIRONMENT: development
+        NODE_ENV_OVERRIDE: development
+    container_name: priya-dashboard
+    profiles: ["core"]
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+      NEXT_PUBLIC_API_URL: http://localhost:9000
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+      GATEWAY_INTERNAL_URL: http://gateway:9000
+      DATABASE_URL: postgres://priya:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/priya_global
+      JWT_SECRET: ${CREDENTIALS_ENCRYPTION_KEY:-fallback-dev-secret}
+      META_APP_ID: ${META_APP_ID:-}
+      META_APP_SECRET: ${META_APP_SECRET:-}
+      WHATSAPP_BUSINESS_ACCOUNT_ID: ${WHATSAPP_BUSINESS_ACCOUNT_ID:-}
+      SHOPIFY_CLIENT_ID: ${SHOPIFY_CLIENT_ID:-}
+      SHOPIFY_CLIENT_SECRET: ${SHOPIFY_CLIENT_SECRET:-}
+    depends_on:
+      gateway:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    networks:
+      - priya-net
+
+  # ─── Monitoring Stack ───
+
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: priya-prometheus
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus:/etc/prometheus
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+    networks:
+      - priya-net
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  grafana:
+    image: grafana/grafana:10.4.0
+    container_name: priya-grafana
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?GRAFANA_PASSWORD must be set - see .env.example}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_INSTALL_PLUGINS: "grafana-piechart-panel"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    networks:
+      - priya-net
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  kafka_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+
+networks:
+  priya-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

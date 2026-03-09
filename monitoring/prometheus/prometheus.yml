@@ -1,0 +1,60 @@
+# Prometheus Configuration for Priya Global Platform
+# Scrapes metrics from:
+# - OpenTelemetry Collector (traces as metrics)
+# - Services (if they export Prometheus metrics)
+
+global:
+  scrape_interval: 15s      # Default scrape interval
+  evaluation_interval: 15s  # Evaluation interval for alerts
+  external_labels:
+    monitor: 'priya-platform'
+    environment: 'production'
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+
+# Load rules
+rule_files: []
+  # - "alerts.yml"
+  # - "recording_rules.yml"
+
+scrape_configs:
+  # OpenTelemetry Collector metrics
+  - job_name: 'otel-collector'
+    static_configs:
+      - targets: ['otel-collector:8888']
+    metrics_path: '/metrics'
+
+  # OpenTelemetry Collector OTLP metrics
+  - job_name: 'otel-prometheus-exporter'
+    static_configs:
+      - targets: ['otel-collector:8889']
+    metrics_path: '/metrics'
+    metric_relabel_configs:
+      # Keep only OpenTelemetry metrics
+      - source_labels: [__name__]
+        regex: 'otel_.*'
+        action: keep
+
+  # Service metrics (if services export Prometheus metrics)
+  # Uncomment and configure for each service
+  #
+  # - job_name: 'gateway'
+  #   static_configs:
+  #     - targets: ['localhost:9001/metrics']
+  #
+  # - job_name: 'auth'
+  #   static_configs:
+  #     - targets: ['localhost:9003/metrics']
+  #
+  # - job_name: 'billing'
+  #   static_configs:
+  #     - targets: ['localhost:9004/metrics']
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']

@@ -1,0 +1,317 @@
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: priya-tls-cert
+  namespace: priya-core
+type: kubernetes.io/tls
+data:
+  tls.crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUU5VENDQXRDR0FRQ0JnYzcycmlHcElBekFOQmdrcWhraUc5dzBCQVFzRkFEQjRNUXN3Q1FZRFZRUUdFd0pWVXpFaQpNQ0FHQTFVRUNITVpSR2xuWVcxd2JHVXVZMjl0TVJRd0VnWURWUVFLRXd0SFlXNW5Jam9nWm1Gc2MyVWpJRUJXVmoxSQozMEJXUmoxSUlGUkZVMVJTVEVGVFZFRlRVMGhCRDAxVVJUTTVOamR6VEhObGNuWmxjaTBnUTBFeFZHeHZZbUYwClN5QkJRVTRzSUVGRVEzSmxaR0Z1SUVOQk1qSmxlaUIzYjNKdUozSmxabU52YjNKNUlGUlFJRkJEUTJGd1V6WkQKZVRkZFVVRlFRMEZUVUU5SFJVRkVSVkJCVEVWQ1JFRkRRMUpZUVhBSURUdyIsICJKVFFSbWRHWnJZMjl1WVJNMERTQXMKSVFZR0FWVHdFQVlEVlFRTUV3bHdibGRoYkc0dVkyOXRNSUlCSTJBd0RRVURWUVFMQ0REREEwUVlEVlFRTUV6QVMKQmdOVkJBRVRDMHRWVXpFMk1EQTNNQjRYRFRJd01qRTJNVEF5TXpBNU5Wb1hEVEl4TWpFMk1UQXlNemM1TlZvdwpaMXhuRVFZREJVUkFSVlJRUlVGR1RESkVSRmhTVWpWRlZFa3dSVUV5UVRoR1FVRlVSRkJSUTBOSFVERllXbGhZCmVVUm5ZVmRLYWxCdVRuQmFNMDE1WTBSVmQyRjNSazVsZVhSRVJGTlVSRVV6VXpCWVRVNXJVMFJGUmsxUVUzRlMKVWt0MlYydHhSRmxUUWtSUFUxQlBVa1Y1V1RKWFFrWlFWVVJCZWsxWVRqVkNSRnBXWWpCR2VFMUhiSEJpYjJwegpZMmhWZEU5VFFqRkVSMWR5YTBGUlVrMUdaM0ZVVmpCa2RWVllUakJqTWpGUVkyMUZlRm9yWW5CRlYySkdkR0ZSClZHeHZZbUYwU1VKWFFuQmtlVWg0T1hjNWVtaHJZbFI0YW1SM2FIWlpNamwzVWpCUk5sbFhOVFJ5VmxCTGRIWkYKVVhCQ1FWbFVSVFZSTW0sIA0K
+  tls.key: LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1JSUV2Z0lCQURBTkJna3Foa2lHOXcwQkFRRUZBQVNDQktnd2dnU2tBZ0VBQm9JQkFRQzMyOXdlcXVyM3N4dnRpCmowbVdHNUlBPT0KLS0tLS1FTkQgUFJJVkFURSBLRVktLS0tLQ==
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: priya-alb-ingress
+  namespace: priya-core
+  labels:
+    app: api-gateway
+    tier: platform
+  annotations:
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: '443'
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-south-1:ACCOUNT_ID:certificate/CERTIFICATE_ID
+    alb.ingress.kubernetes.io/healthcheck-path: /health
+    alb.ingress.kubernetes.io/healthcheck-port: traffic-port
+    alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
+    alb.ingress.kubernetes.io/healthy-threshold-count: '2'
+    alb.ingress.kubernetes.io/unhealthy-threshold-count: '2'
+    alb.ingress.kubernetes.io/timeout-in-seconds: '60'
+    alb.ingress.kubernetes.io/success-codes: '200'
+    alb.ingress.kubernetes.io/load-balancer-attributes: idle_timeout.connection.timeout=60,deletion_protection.enabled=true,access_logs.s3.enabled=true,access_logs.s3.bucket=priya-global-alb-logs,access_logs.s3.prefix=alb
+    alb.ingress.kubernetes.io/wafv2-acl-arn: arn:aws:wafv2:ap-south-1:ACCOUNT_ID:global/webacl/priya-waf/WEBACL_ID
+    alb.ingress.kubernetes.io/tags: Environment=production,Team=platform,CostCenter=engineering
+    alb.ingress.kubernetes.io/security-groups: priya-alb-sg
+    alb.ingress.kubernetes.io/inbound-cidrs: 0.0.0.0/0
+    # ── Security Headers ──
+    alb.ingress.kubernetes.io/actions.response-headers: |
+      {"type":"fixed-response","fixedResponseConfig":{"contentType":"text/plain","statusCode":"200"}}
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "Strict-Transport-Security: max-age=63072000; includeSubDomains; preload";
+      more_set_headers "X-Content-Type-Options: nosniff";
+      more_set_headers "X-Frame-Options: DENY";
+      more_set_headers "X-XSS-Protection: 1; mode=block";
+      more_set_headers "Referrer-Policy: strict-origin-when-cross-origin";
+      more_set_headers "Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' wss://api.priya-global.com wss://api.priyaai.com; frame-ancestors 'none'";
+      more_set_headers "Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()";
+spec:
+  rules:
+    - host: api.priya-global.com
+      http:
+        paths:
+          - path: /health
+            pathType: Exact
+            backend:
+              service:
+                name: api-gateway
+                port:
+                  number: 9000
+          - path: /health/ready
+            pathType: Exact
+            backend:
+              service:
+                name: api-gateway
+                port:
+                  number: 9000
+          - path: /api/*
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: api-gateway
+                port:
+                  number: 9000
+          - path: /v1/auth/*
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: auth-service
+                port:
+                  number: 9000
+          - path: /v1/users/*
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: user-service
+                port:
+                  number: 9001
+          - path: /v1/tenants/*
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: tenant-service
+                port:
+                  number: 9002
+          - path: /v1/organizations/*
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: organization-service
+                port:
+                  number: 9003
+          - path: /v1/permissions/*
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: permission-service
+                port:
+                  number: 9004
+          - path: /v1/audit/*
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: audit-service
+                port:
+                  number: 9005
+          - path: /v1/notifications/*
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: notification-service
+                port:
+                  number: 9006
+          - path: /v1/webhooks/*
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: webhook-service
+                port:
+                  number: 9007
+          - path: /v1/analytics/*
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: analytics-service
+                port:
+                  number: 9020
+          - path: /v1/reports/*
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: reporting-service
+                port:
+                  number: 9021
+          - path: /v1/billing/*
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: billing-service
+                port:
+                  number: 9022
+          - path: /v1/ai/*
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: ai-engine
+                port:
+                  number: 9030
+    - host: dashboard.priya-global.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: dashboard
+                port:
+                  number: 3000
+---
+apiVersion: policy/v1
+kind: NetworkPolicy
+metadata:
+  name: priya-core-network-policy
+  namespace: priya-core
+spec:
+  podSelector:
+    matchLabels:
+      tier: core
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: priya-core
+        - namespaceSelector:
+            matchLabels:
+              name: priya-channels
+        - namespaceSelector:
+            matchLabels:
+              name: priya-business
+        - namespaceSelector:
+            matchLabels:
+              name: priya-advanced
+      ports:
+        - protocol: TCP
+          port: 9000
+        - protocol: TCP
+          port: 9001
+        - protocol: TCP
+          port: 9002
+        - protocol: TCP
+          port: 9003
+        - protocol: TCP
+          port: 9004
+        - protocol: TCP
+          port: 9005
+        - protocol: TCP
+          port: 9006
+        - protocol: TCP
+          port: 9007
+        - protocol: TCP
+          port: 9008
+        - protocol: TCP
+          port: 9009
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 53
+        - protocol: UDP
+          port: 53
+  egress:
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 6379
+        - protocol: TCP
+          port: 9092
+        - protocol: TCP
+          port: 9094
+    - to:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+        - protocol: UDP
+---
+apiVersion: policy/v1
+kind: NetworkPolicy
+metadata:
+  name: priya-services-network-policy
+  namespace: priya-channels
+spec:
+  podSelector:
+    matchLabels:
+      tier: channels
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: priya-core
+        - namespaceSelector:
+            matchLabels:
+              name: priya-channels
+  egress:
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 6379
+        - protocol: TCP
+          port: 9092
+        - protocol: TCP
+          port: 9094
+    - to:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+        - protocol: UDP
+---
+apiVersion: policy/v1
+kind: NetworkPolicy
+metadata:
+  name: priya-ai-network-policy
+  namespace: priya-advanced
+spec:
+  podSelector:
+    matchLabels:
+      tier: advanced
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: priya-core
+        - namespaceSelector:
+            matchLabels:
+              name: priya-advanced
+  egress:
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 6379
+        - protocol: TCP
+          port: 9092
+        - protocol: TCP
+          port: 9094
+    - to:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+        - protocol: UDP

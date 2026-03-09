@@ -1,0 +1,338 @@
+# ============================================================
+# Prometheus Alerting Rules for Priya Global Platform
+#
+# Alert conditions for SRE monitoring and incident response
+# Evaluated every 15 seconds
+# ============================================================
+
+groups:
+  # ─────────────────────────────────────────────────────────────────────────
+  # Service Health Alerts
+  # ─────────────────────────────────────────────────────────────────────────
+
+  - name: "service_health"
+    interval: 15s
+    rules:
+      - alert: "ServiceDown"
+        expr: |
+          up{service!="prometheus"} == 0
+        for: 1m
+        labels:
+          severity: "critical"
+          team: "platform"
+        annotations:
+          summary: "Service {{ $labels.service }} is down"
+          description: "{{ $labels.service }} has been unreachable for 1 minute"
+          runbook: "https://wiki.priya-global.com/runbooks/service-down"
+
+      - alert: "ServiceDegraded"
+        expr: |
+          (http_request_duration_seconds_p95{service!="prometheus"} > 2.0)
+        for: 5m
+        labels:
+          severity: "warning"
+          team: "platform"
+        annotations:
+          summary: "{{ $labels.service }} response time is degraded"
+          description: "p95 latency is {{ $value }}s for {{ $labels.service }}"
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # HTTP Error Rate Alerts
+  # ─────────────────────────────────────────────────────────────────────────
+
+  - name: "http_errors"
+    interval: 15s
+    rules:
+      - alert: "HighErrorRate"
+        expr: |
+          (
+            sum(rate(http_requests_total{status=~"5.."}[5m])) by (service)
+            /
+            sum(rate(http_requests_total[5m])) by (service)
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: "warning"
+          team: "platform"
+        annotations:
+          summary: "{{ $labels.service }} has high error rate"
+          description: "Error rate is {{ $value | humanizePercentage }} for the last 5 minutes"
+          dashboard: "http://grafana:3001/d/priya-platform"
+
+      - alert: "VeryHighErrorRate"
+        expr: |
+          (
+            sum(rate(http_requests_total{status=~"5.."}[5m])) by (service)
+            /
+            sum(rate(http_requests_total[5m])) by (service)
+          ) > 0.20
+        for: 2m
+        labels:
+          severity: "critical"
+          team: "platform"
+        annotations:
+          summary: "{{ $labels.service }} has CRITICAL error rate"
+          description: "Error rate is {{ $value | humanizePercentage }} - investigating immediately"
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Latency Alerts
+  # ─────────────────────────────────────────────────────────────────────────
+
+  - name: "latency"
+    interval: 15s
+    rules:
+      - alert: "HighLatencyP50"
+        expr: |
+          histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket[5m])) by (service, le)) > 0.5
+        for: 5m
+        labels:
+          severity: "info"
+          team: "platform"
+        annotations:
+          summary: "{{ $labels.service }} has elevated median latency"
+          description: "p50 latency is {{ $value }}s"
+
+      - alert: "HighLatencyP95"
+        expr: |
+          histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (service, le)) > 2.0
+        for: 5m
+        labels:
+          severity: "warning"
+          team: "platform"
+        annotations:
+          summary: "{{ $labels.service }} p95 latency is high"
+          description: "p95 latency is {{ $value }}s for the last 5 minutes"
+
+      - alert: "HighLatencyP99"
+        expr: |
+          histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (service, le)) > 5.0
+        for: 5m
+        labels:
+          severity: "warning"
+          team: "platform"
+        annotations:
+          summary: "{{ $labels.service }} p99 latency is critical"
+          description: "p99 latency is {{ $value }}s - user experience is degraded"
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Resource Alerts
+  # ─────────────────────────────────────────────────────────────────────────
+
+  - name: "resources"
+    interval: 15s
+    rules:
+      - alert: "HighMemoryUsage"
+        expr: |
+          (container_memory_usage_bytes / container_spec_memory_limit_bytes) > 0.85
+        for: 10m
+        labels:
+          severity: "warning"
+          team: "platform"
+        annotations:
+          summary: "{{ $labels.container_name }} memory usage is high"
+          description: "Memory usage is {{ $value | humanizePercentage }} of limit"
+
+      - alert: "HighCPUUsage"
+        expr: |
+          rate(container_cpu_usage_seconds_total[5m]) > 0.80
+        for: 10m
+        labels:
+          severity: "warning"
+          team: "platform"
+        annotations:
+          summary: "{{ $labels.container_name }} CPU usage is high"
+          description: "CPU usage is {{ $value | humanizePercentage }} of available"
+
+      - alert: "DiskSpaceLow"
+        expr: |
+          (node_filesystem_avail_bytes / node_filesystem_size_bytes) < 0.10
+        for: 5m
+        labels:
+          severity: "critical"
+          team: "platform"
+        annotations:
+          summary: "Disk space low on {{ $labels.instance }}"
+          description: "Only {{ $value | humanizePercentage }} free space remaining"
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Database Alerts
+  # ─────────────────────────────────────────────────────────────────────────
+
+  - name: "database"
+    interval: 15s
+    rules:
+      - alert: "DatabaseConnectionPoolExhausted"
+        expr: |
+          db_connections_available{service!=""} < 2
+        for: 5m
+        labels:
+          severity: "critical"
+          team: "platform"
+        annotations:
+          summary: "Database connection pool nearly exhausted on {{ $labels.service }}"
+          description: "Only {{ $value }} connections available in pool"
+
+      - alert: "HighDatabaseQueryLatency"
+        expr: |
+          histogram_quantile(0.95, sum(rate(db_query_duration_seconds_bucket[5m])) by (service, le)) > 1.0
+        for: 5m
+        labels:
+          severity: "warning"
+          team: "database"
+        annotations:
+          summary: "{{ $labels.service }} database query latency is high"
+          description: "p95 query time is {{ $value }}s"
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Cache/Redis Alerts
+  # ─────────────────────────────────────────────────────────────────────────
+
+  - name: "cache"
+    interval: 15s
+    rules:
+      - alert: "RedisHighMemory"
+        expr: |
+          redis_memory_usage_bytes > 430981120  # 80% of 512MB default limit
+        for: 10m
+        labels:
+          severity: "warning"
+          team: "platform"
+        annotations:
+          summary: "Redis memory usage is high"
+          description: "Redis is using {{ humanize $value }} bytes of memory"
+
+      - alert: "RedisDown"
+        expr: |
+          up{job="redis"} == 0
+        for: 1m
+        labels:
+          severity: "critical"
+          team: "platform"
+        annotations:
+          summary: "Redis is down"
+          description: "Redis has been unreachable for 1 minute"
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Message Queue Alerts
+  # ─────────────────────────────────────────────────────────────────────────
+
+  - name: "message_queue"
+    interval: 15s
+    rules:
+      - alert: "KafkaConsumerLagHigh"
+        expr: |
+          kafka_consumer_lag{service!=""} > 10000
+        for: 5m
+        labels:
+          severity: "warning"
+          team: "platform"
+        annotations:
+          summary: "Kafka consumer lag is high for {{ $labels.topic }}"
+          description: "Consumer group {{ $labels.consumer_group }} is {{ $value }} messages behind"
+
+      - alert: "KafkaConsumerLagCritical"
+        expr: |
+          kafka_consumer_lag{service!=""} > 100000
+        for: 2m
+        labels:
+          severity: "critical"
+          team: "platform"
+        annotations:
+          summary: "Kafka consumer lag is CRITICAL for {{ $labels.topic }}"
+          description: "Consumer is {{ $value }} messages behind - messages may be lost"
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Tenant/Billing Alerts
+  # ─────────────────────────────────────────────────────────────────────────
+
+  - name: "tenants"
+    interval: 15s
+    rules:
+      - alert: "TenantRateLimitExceeded"
+        expr: |
+          rate(tenant_rate_limit_exceeded_total[1m]) > 100
+        for: 5m
+        labels:
+          severity: "warning"
+          team: "platform"
+        annotations:
+          summary: "Tenant {{ $labels.tenant_id }} is hitting rate limits"
+          description: "{{ $value }} rate limit exceeds per minute on {{ $labels.service }}"
+
+      - alert: "AITokenBudgetExceeded"
+        expr: |
+          ai_token_budget_used_percent > 100
+        for: 5m
+        labels:
+          severity: "warning"
+          team: "billing"
+        annotations:
+          summary: "Tenant {{ $labels.tenant_id }} AI token quota exceeded"
+          description: "Token budget usage is {{ $value }}% - soft limit or billing error"
+
+      - alert: "AITokenBudgetCritical"
+        expr: |
+          ai_token_budget_used_percent > 95
+        for: 5m
+        labels:
+          severity: "info"
+          team: "billing"
+        annotations:
+          summary: "Tenant {{ $labels.tenant_id }} AI token quota near limit"
+          description: "Token budget is {{ $value }}% used - approaching hard limit"
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Security Alerts
+  # ─────────────────────────────────────────────────────────────────────────
+
+  - name: "security"
+    interval: 15s
+    rules:
+      - alert: "SSLCertExpiringSoon"
+        expr: |
+          (ssl_cert_expiry_seconds - time()) / 86400 < 14
+        labels:
+          severity: "warning"
+          team: "platform"
+        annotations:
+          summary: "SSL certificate for {{ $labels.domain }} expires soon"
+          description: "Certificate expires in {{ $value }} days"
+
+      - alert: "SSLCertExpired"
+        expr: |
+          (ssl_cert_expiry_seconds - time()) < 0
+        labels:
+          severity: "critical"
+          team: "platform"
+        annotations:
+          summary: "SSL certificate for {{ $labels.domain }} has EXPIRED"
+          description: "Certificate expired {{ $value }} seconds ago - immediate action required"
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Exception/Error Tracking
+  # ─────────────────────────────────────────────────────────────────────────
+
+  - name: "errors"
+    interval: 15s
+    rules:
+      - alert: "HighExceptionRate"
+        expr: |
+          rate(exceptions_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: "warning"
+          team: "platform"
+        annotations:
+          summary: "High exception rate in {{ $labels.service }}"
+          description: "{{ $value }} exceptions per second for exception type {{ $labels.exception_type }}"
+
+      - alert: "ValidationErrorSpike"
+        expr: |
+          rate(validation_errors_total[5m]) > 1.0
+        for: 5m
+        labels:
+          severity: "info"
+          team: "platform"
+        annotations:
+          summary: "Validation error spike in {{ $labels.service }}"
+          description: "Field: {{ $labels.field }}, Rate: {{ $value }} errors/sec"

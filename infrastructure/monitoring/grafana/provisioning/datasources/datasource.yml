@@ -1,0 +1,40 @@
+# ============================================================
+# Grafana Datasource Configuration
+# ============================================================
+# Auto-provisions Prometheus as the primary datasource
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    orgId: 1
+    url: http://prometheus:9090
+    password: ""
+    user: ""
+    database: ""
+    basicAuth: false
+    basicAuthUser: ""
+    basicAuthPassword: ""
+    withCredentials: false
+    isDefault: true
+    jsonData:
+      timeInterval: 15s
+      maxDataPoints: 43200
+      queryTimeout: 30s
+      tlsSkipVerify: false
+    version: 1
+    editable: true
+
+  - name: AlertManager
+    type: alertmanager
+    access: proxy
+    orgId: 1
+    url: http://alertmanager:9093
+    basicAuth: false
+    isDefault: false
+    version: 1
+    editable: true
+    jsonData:
+      handleGrafanaAlert: true

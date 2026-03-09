@@ -1,0 +1,189 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ========================================================================
+   PRIYA GLOBAL — Design System
+   International-quality SaaS aesthetic. Clean, confident, modern.
+   ======================================================================== */
+
+@layer base {
+  * {
+    @apply border-neutral-200 dark:border-neutral-800;
+  }
+
+  html {
+    @apply scroll-smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-50;
+    font-feature-settings: "kern" 1, "liga" 1, "calt" 1;
+  }
+
+  /* Typography scale — Futura driven */
+  h1 { @apply text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight leading-[1.08]; }
+  h2 { @apply text-3xl md:text-4xl lg:text-5xl font-bold tracking-tight leading-[1.12]; }
+  h3 { @apply text-xl md:text-2xl font-semibold tracking-tight leading-snug; }
+  h4 { @apply text-lg font-semibold tracking-tight; }
+
+  a {
+    @apply text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 transition-colors;
+  }
+
+  button:focus-visible,
+  a:focus-visible {
+    @apply outline-2 outline-offset-2 outline-primary-600;
+  }
+
+  ::selection {
+    @apply bg-primary-600/20 text-primary-900;
+  }
+}
+
+@layer components {
+  /* ---- Scrollbar ---- */
+  ::-webkit-scrollbar { @apply w-1.5 h-1.5; }
+  ::-webkit-scrollbar-track { @apply bg-transparent; }
+  ::-webkit-scrollbar-thumb { @apply bg-neutral-300 dark:bg-neutral-700 rounded-full hover:bg-neutral-400 dark:hover:bg-neutral-600; }
+
+  /* ---- Gradient Text ---- */
+  .gradient-text {
+    @apply bg-gradient-to-r from-primary-600 via-primary-500 to-accent-500 bg-clip-text text-transparent;
+    background-size: 200% auto;
+  }
+
+  /* ---- Glass morphism ---- */
+  .glass {
+    @apply backdrop-blur-2xl bg-white/70 dark:bg-neutral-900/70 border border-white/20 dark:border-neutral-700/30;
+  }
+
+  /* ---- Smooth transition preset ---- */
+  .smooth { @apply transition-all duration-300 ease-out; }
+
+  /* ---- Card styles ---- */
+  .card-hover {
+    @apply hover:shadow-xl hover:shadow-primary-600/5 dark:hover:shadow-primary-400/5 smooth;
+  }
+
+  .card-lift {
+    @apply hover:-translate-y-1 hover:shadow-2xl hover:shadow-primary-600/10 smooth;
+  }
+
+  /* ---- Input focus ring ---- */
+  .input-ring {
+    @apply focus:ring-2 focus:ring-primary-500/40 focus:ring-offset-0 focus:border-primary-500;
+  }
+
+  /* ---- Badge base ---- */
+  .badge-base {
+    @apply inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium;
+  }
+
+  /* ---- Section container ---- */
+  .section-container {
+    @apply mx-auto max-w-7xl px-6 md:px-8 lg:px-12;
+  }
+
+  /* ---- Dot grid background ---- */
+  .dot-grid {
+    background-image: radial-gradient(circle, rgb(0 0 0 / 0.06) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+  .dark .dot-grid {
+    background-image: radial-gradient(circle, rgb(255 255 255 / 0.04) 1px, transparent 1px);
+  }
+
+  /* ---- Glow effect ---- */
+  .glow-primary {
+    box-shadow: 0 0 60px -12px rgb(37 99 235 / 0.35);
+  }
+
+  .glow-accent {
+    box-shadow: 0 0 60px -12px rgb(147 51 234 / 0.3);
+  }
+
+  /* ---- Animated gradient border ---- */
+  .gradient-border {
+    position: relative;
+  }
+  .gradient-border::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(135deg, #2563eb, #9333ea, #2563eb);
+    background-size: 200% 200%;
+    animation: gradient-rotate 4s ease infinite;
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+  }
+
+  /* ---- Noise texture overlay ---- */
+  .noise {
+    position: relative;
+  }
+  .noise::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    opacity: 0.03;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    pointer-events: none;
+  }
+}
+
+@layer utilities {
+  /* ---- Fade masks ---- */
+  .fade-bottom {
+    mask-image: linear-gradient(to bottom, black 70%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, black 70%, transparent 100%);
+  }
+
+  .fade-edges {
+    mask-image: linear-gradient(to right, transparent 0%, black 10%, black 90%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to right, transparent 0%, black 10%, black 90%, transparent 100%);
+  }
+
+  /* ---- Text balance ---- */
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .text-pretty {
+    text-wrap: pretty;
+  }
+}
+
+/* ---- Keyframes ---- */
+@keyframes gradient-rotate {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+@keyframes slide-up {
+  0% { transform: translateY(20px); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}

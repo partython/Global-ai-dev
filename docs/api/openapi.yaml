@@ -1,0 +1,1850 @@
+openapi: 3.0.3
+info:
+  title: Priya Global Platform API
+  version: 1.0.0
+  description: |
+    # Priya Global - AI-Powered Multi-Channel Sales Platform
+
+    Complete API documentation for the Priya Global Platform - a comprehensive multi-tenant system for managing customer communications, AI-powered chat, billing, analytics, and business operations across 36 microservices.
+
+    ## Key Features
+    - **Multi-tenant Architecture**: Fully isolated workspaces with granular access control
+    - **36 Microservices**: Specialized services for auth, channels, AI, billing, analytics, and more
+    - **Multi-channel Support**: WhatsApp, Email, Voice, SMS, Social, WebChat, Telegram, RCS, Video
+    - **AI Integration**: Advanced conversational AI, sentiment analysis, and intelligent routing
+    - **Enterprise Billing**: Stripe-powered subscriptions with regional pricing (USD, INR, GBP, AUD)
+    - **Real-time Analytics**: Comprehensive dashboards and custom reporting
+    - **Webhooks & Callbacks**: Event-driven architecture for real-time integrations
+    - **Rate Limiting**: Plan-based throttling with per-tenant limits
+
+    ## Authentication
+    All endpoints use JWT (Bearer token) authentication except public webhooks.
+
+    ```
+    Authorization: Bearer {access_token}
+    ```
+
+    Access tokens are valid for 15 minutes. Use the refresh token to obtain new access tokens.
+
+    ## Multi-tenancy
+    Include tenant context in all requests:
+    - **X-Tenant-ID**: Tenant identifier (auto-injected by gateway)
+    - **X-Request-ID**: Unique request identifier for tracing
+
+    ## Rate Limiting
+    Rates are plan-based:
+    - **Starter**: 100 requests/minute
+    - **Growth**: 500 requests/minute
+    - **Enterprise**: 2000 requests/minute
+
+    Rate limit status in response headers:
+    - X-RateLimit-Limit
+    - X-RateLimit-Remaining
+    - X-RateLimit-Reset
+    - Retry-After (if limited)
+
+    ## Pagination
+    List endpoints support pagination with limit/offset:
+    ```
+    GET /api/v1/resource?limit=50&offset=100
+    ```
+
+  contact:
+    name: Priya Global Support
+    email: support@priyaai.com
+    url: https://priyaai.com/support
+
+  license:
+    name: Commercial
+    url: https://priyaai.com/license
+
+  x-logo:
+    url: https://priyaai.com/logo.png
+    altText: Priya Global
+
+servers:
+  - url: https://api.priyaai.com
+    description: Production environment
+    variables:
+      version:
+        default: v1
+
+  - url: https://staging.api.priyaai.com
+    description: Staging environment for testing
+
+  - url: http://localhost:9000
+    description: Local development environment
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Auth
+    description: Authentication, user registration, and token management
+
+  - name: Conversations
+    description: Multi-channel conversation management and message routing
+
+  - name: Contacts
+    description: Contact database and customer information management
+
+  - name: Channels
+    description: Configuration and management of communication channels
+
+  - name: Knowledge Base
+    description: Document storage, retrieval, and semantic search
+
+  - name: AI
+    description: AI-powered message classification and response generation
+
+  - name: Analytics
+    description: Dashboards, reports, and conversation metrics
+
+  - name: Billing
+    description: Subscription management and invoice tracking
+
+  - name: Campaigns
+    description: Marketing campaigns and bulk messaging
+
+  - name: Workflows
+    description: Automation workflows and conditional logic
+
+  - name: Team
+    description: Team member management and permissions
+
+  - name: Webhooks
+    description: Event subscriptions and webhook management
+
+  - name: Leads
+    description: Lead capture and management
+
+  - name: Health
+    description: Health checks and service status
+
+paths:
+  /health:
+    get:
+      summary: Platform health check
+      tags: [Health]
+      description: Returns the health status of the gateway and critical services
+      security: []
+      responses:
+        '200':
+          description: Platform is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+
+  /api/v1/auth/register:
+    post:
+      summary: User registration
+      tags: [Auth]
+      description: Create a new user account and organization workspace
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, first_name, last_name]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: user@company.com
+                password:
+                  type: string
+                  minLength: 12
+                  example: SecurePassword123!
+                first_name:
+                  type: string
+                  example: John
+                last_name:
+                  type: string
+                  example: Doe
+                company_name:
+                  type: string
+                  example: Acme Corp
+                phone:
+                  type: string
+                  format: phone
+      responses:
+        '201':
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user_id:
+                    type: string
+                    format: uuid
+                  email:
+                    type: string
+                  access_token:
+                    type: string
+                  refresh_token:
+                    type: string
+                  workspace_id:
+                    type: string
+                    format: uuid
+        '400':
+          description: Invalid input or user already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Too many registration attempts
+
+  /api/v1/auth/login:
+    post:
+      summary: User login
+      tags: [Auth]
+      description: Authenticate user and receive JWT tokens
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                    description: JWT access token (15 minutes)
+                  refresh_token:
+                    type: string
+                    description: Refresh token (7 days)
+                  user_id:
+                    type: string
+                    format: uuid
+                  workspace_id:
+                    type: string
+                    format: uuid
+                  expires_in:
+                    type: integer
+                    description: Token expiration in seconds
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Too many login attempts
+
+  /api/v1/auth/refresh:
+    post:
+      summary: Refresh access token
+      tags: [Auth]
+      description: Use refresh token to obtain new access token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token:
+                  type: string
+      responses:
+        '200':
+          description: Token refreshed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                  expires_in:
+                    type: integer
+        '401':
+          description: Invalid or expired refresh token
+
+  /api/v1/auth/logout:
+    post:
+      summary: User logout
+      tags: [Auth]
+      description: Invalidate current session and tokens
+      responses:
+        '200':
+          description: Logged out successfully
+        '401':
+          description: Unauthorized
+
+  /api/v1/conversations:
+    get:
+      summary: List conversations
+      tags: [Conversations]
+      description: Retrieve paginated list of conversations with optional filtering
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, closed, archived]
+        - name: channel
+          in: query
+          schema:
+            type: string
+            enum: [whatsapp, email, sms, voice, webchat, telegram, social]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [created_at, updated_at, last_message_at]
+      responses:
+        '200':
+          description: List of conversations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Conversation'
+                  total_count:
+                    type: integer
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+
+    post:
+      summary: Create conversation
+      tags: [Conversations]
+      description: Initiate a new conversation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [contact_id, channel]
+              properties:
+                contact_id:
+                  type: string
+                  format: uuid
+                channel:
+                  type: string
+                  enum: [whatsapp, email, sms, voice, webchat, telegram, social]
+                subject:
+                  type: string
+                initial_message:
+                  type: string
+                metadata:
+                  type: object
+      responses:
+        '201':
+          description: Conversation created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Conversation'
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/conversations/{id}:
+    get:
+      summary: Get conversation details
+      tags: [Conversations]
+      description: Retrieve full conversation with all messages
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Conversation details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  conversation:
+                    $ref: '#/components/schemas/Conversation'
+                  messages:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Message'
+        '404':
+          description: Conversation not found
+
+    patch:
+      summary: Update conversation
+      tags: [Conversations]
+      description: Update conversation metadata, subject, or reassign agent
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                subject:
+                  type: string
+                tags:
+                  type: array
+                  items:
+                    type: string
+                assigned_to:
+                  type: string
+                  format: uuid
+                metadata:
+                  type: object
+      responses:
+        '200':
+          description: Conversation updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Conversation'
+        '404':
+          description: Conversation not found
+
+  /api/v1/conversations/{id}/messages:
+    post:
+      summary: Send message in conversation
+      tags: [Conversations]
+      description: Add a message to a conversation (agent or system initiated)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content:
+                  type: string
+                message_type:
+                  type: string
+                  enum: [text, image, video, document, template]
+                media_url:
+                  type: string
+                  format: uri
+                use_ai:
+                  type: boolean
+                  description: Auto-generate response using AI
+      responses:
+        '201':
+          description: Message sent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '400':
+          description: Invalid message
+        '404':
+          description: Conversation not found
+
+  /api/v1/conversations/{id}/close:
+    patch:
+      summary: Close conversation
+      tags: [Conversations]
+      description: Mark conversation as closed
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                satisfaction_score:
+                  type: integer
+                  minimum: 1
+                  maximum: 5
+      responses:
+        '200':
+          description: Conversation closed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Conversation'
+
+  /api/v1/contacts:
+    get:
+      summary: List contacts
+      tags: [Contacts]
+      description: Retrieve paginated contact list
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Search by name, email, or phone
+        - name: segment
+          in: query
+          schema:
+            type: string
+          description: Filter by contact segment
+      responses:
+        '200':
+          description: List of contacts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Contact'
+                  total_count:
+                    type: integer
+
+    post:
+      summary: Create contact
+      tags: [Contacts]
+      description: Add new contact to database
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+                phone:
+                  type: string
+                first_name:
+                  type: string
+                last_name:
+                  type: string
+                company:
+                  type: string
+                metadata:
+                  type: object
+                tags:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '201':
+          description: Contact created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Contact'
+        '400':
+          description: Invalid input
+
+  /api/v1/contacts/{id}:
+    get:
+      summary: Get contact details
+      tags: [Contacts]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Contact details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Contact'
+        '404':
+          description: Contact not found
+
+    patch:
+      summary: Update contact
+      tags: [Contacts]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  format: email
+                phone:
+                  type: string
+                first_name:
+                  type: string
+                last_name:
+                  type: string
+                metadata:
+                  type: object
+      responses:
+        '200':
+          description: Contact updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Contact'
+
+    delete:
+      summary: Delete contact
+      tags: [Contacts]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Contact deleted
+        '404':
+          description: Contact not found
+
+  /api/v1/channels:
+    get:
+      summary: List configured channels
+      tags: [Channels]
+      description: Get all active communication channels
+      responses:
+        '200':
+          description: List of channels
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Channel'
+
+    post:
+      summary: Configure channel
+      tags: [Channels]
+      description: Add new communication channel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, credentials]
+              properties:
+                type:
+                  type: string
+                  enum: [whatsapp, email, sms, voice, telegram, webchat, social, rcs, video]
+                credentials:
+                  type: object
+                  description: Channel-specific credentials
+                name:
+                  type: string
+                enabled:
+                  type: boolean
+                  default: true
+      responses:
+        '201':
+          description: Channel configured
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Channel'
+        '400':
+          description: Invalid configuration
+
+  /api/v1/channels/{id}:
+    get:
+      summary: Get channel details
+      tags: [Channels]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Channel details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Channel'
+
+    patch:
+      summary: Update channel
+      tags: [Channels]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                enabled:
+                  type: boolean
+                credentials:
+                  type: object
+      responses:
+        '200':
+          description: Channel updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Channel'
+
+    delete:
+      summary: Delete channel
+      tags: [Channels]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Channel deleted
+
+  /api/v1/knowledge/documents:
+    get:
+      summary: List knowledge base documents
+      tags: [Knowledge Base]
+      description: Retrieve paginated list of knowledge documents
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: category
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of documents
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Document'
+                  total_count:
+                    type: integer
+
+    post:
+      summary: Upload document
+      tags: [Knowledge Base]
+      description: Add document to knowledge base
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, title]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                title:
+                  type: string
+                category:
+                  type: string
+                tags:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '201':
+          description: Document uploaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Document'
+        '413':
+          description: File too large (max 50MB)
+
+  /api/v1/knowledge/documents/{id}:
+    get:
+      summary: Get document details
+      tags: [Knowledge Base]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Document details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Document'
+
+    delete:
+      summary: Delete document
+      tags: [Knowledge Base]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Document deleted
+
+  /api/v1/knowledge/query:
+    post:
+      summary: Search knowledge base
+      tags: [Knowledge Base]
+      description: Semantic search across knowledge documents
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query]
+              properties:
+                query:
+                  type: string
+                  example: How to reset password
+                limit:
+                  type: integer
+                  default: 10
+                threshold:
+                  type: number
+                  description: Minimum relevance score (0-1)
+                  default: 0.5
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        document_id:
+                          type: string
+                        title:
+                          type: string
+                        content:
+                          type: string
+                        relevance_score:
+                          type: number
+
+  /api/v1/ai/classify:
+    post:
+      summary: Classify message
+      tags: [AI]
+      description: Categorize incoming message using AI
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message]
+              properties:
+                message:
+                  type: string
+                categories:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: Classification result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  primary_category:
+                    type: string
+                  confidence:
+                    type: number
+                    minimum: 0
+                    maximum: 1
+                  secondary_categories:
+                    type: array
+                    items:
+                      type: object
+
+  /api/v1/ai/generate-response:
+    post:
+      summary: Generate AI response
+      tags: [AI]
+      description: Generate contextual response using AI engine
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [conversation_id, conversation_context]
+              properties:
+                conversation_id:
+                  type: string
+                  format: uuid
+                conversation_context:
+                  type: array
+                  items:
+                    type: object
+                tone:
+                  type: string
+                  enum: [professional, friendly, empathetic]
+                max_tokens:
+                  type: integer
+                  default: 500
+      responses:
+        '200':
+          description: Generated response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  response:
+                    type: string
+                  confidence:
+                    type: number
+
+  /api/v1/analytics/overview:
+    get:
+      summary: Analytics dashboard overview
+      tags: [Analytics]
+      description: Get key metrics for dashboard
+      parameters:
+        - name: period
+          in: query
+          schema:
+            type: string
+            enum: [today, week, month, quarter, year]
+            default: month
+      responses:
+        '200':
+          description: Analytics overview
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_conversations:
+                    type: integer
+                  total_messages:
+                    type: integer
+                  avg_response_time:
+                    type: number
+                  customer_satisfaction:
+                    type: number
+                  total_contacts:
+                    type: integer
+
+  /api/v1/analytics/conversations:
+    get:
+      summary: Conversation analytics
+      tags: [Analytics]
+      description: Detailed conversation metrics and trends
+      parameters:
+        - name: start_date
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: end_date
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: group_by
+          in: query
+          schema:
+            type: string
+            enum: [day, week, month, channel, agent]
+      responses:
+        '200':
+          description: Conversation analytics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  metrics:
+                    type: array
+                    items:
+                      type: object
+
+  /api/v1/analytics/agents:
+    get:
+      summary: Agent performance analytics
+      tags: [Analytics]
+      description: Individual agent metrics and performance
+      responses:
+        '200':
+          description: Agent analytics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agents:
+                    type: array
+                    items:
+                      type: object
+
+  /api/v1/billing/subscription:
+    get:
+      summary: Get current subscription
+      tags: [Billing]
+      description: Retrieve workspace subscription details
+      responses:
+        '200':
+          description: Subscription details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  plan:
+                    type: string
+                  status:
+                    type: string
+                  current_period_start:
+                    type: string
+                    format: date-time
+                  current_period_end:
+                    type: string
+                    format: date-time
+                  seats_used:
+                    type: integer
+                  seats_limit:
+                    type: integer
+
+  /api/v1/billing/subscribe:
+    post:
+      summary: Create or upgrade subscription
+      tags: [Billing]
+      description: Subscribe to a plan or upgrade existing subscription
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [plan_id]
+              properties:
+                plan_id:
+                  type: string
+                billing_cycle:
+                  type: string
+                  enum: [monthly, annual]
+                payment_method_id:
+                  type: string
+      responses:
+        '201':
+          description: Subscription created
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          description: Invalid plan or payment method
+
+  /api/v1/billing/invoices:
+    get:
+      summary: List invoices
+      tags: [Billing]
+      description: Get billing invoices
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [draft, open, paid, void, uncollectible]
+      responses:
+        '200':
+          description: List of invoices
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+
+  /api/v1/billing/usage:
+    get:
+      summary: Get current usage
+      tags: [Billing]
+      description: Retrieve current billing period usage
+      responses:
+        '200':
+          description: Usage information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  conversations:
+                    type: integer
+                  messages:
+                    type: integer
+                  storage_gb:
+                    type: number
+                  api_calls:
+                    type: integer
+
+  /api/v1/campaigns:
+    get:
+      summary: List campaigns
+      tags: [Campaigns]
+      description: Get marketing campaigns
+      responses:
+        '200':
+          description: List of campaigns
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Campaign'
+
+    post:
+      summary: Create campaign
+      tags: [Campaigns]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, template, recipients]
+              properties:
+                name:
+                  type: string
+                template:
+                  type: string
+                recipients:
+                  type: array
+                  items:
+                    type: string
+                schedule:
+                  type: object
+      responses:
+        '201':
+          description: Campaign created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Campaign'
+
+  /api/v1/campaigns/{id}:
+    get:
+      summary: Get campaign details
+      tags: [Campaigns]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Campaign details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Campaign'
+
+    patch:
+      summary: Update campaign
+      tags: [Campaigns]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                status:
+                  type: string
+      responses:
+        '200':
+          description: Campaign updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Campaign'
+
+  /api/v1/campaigns/{id}/send:
+    post:
+      summary: Send campaign
+      tags: [Campaigns]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Campaign sent
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/v1/workflows:
+    get:
+      summary: List workflows
+      tags: [Workflows]
+      description: Get automation workflows
+      responses:
+        '200':
+          description: List of workflows
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Workflow'
+
+    post:
+      summary: Create workflow
+      tags: [Workflows]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, trigger, actions]
+              properties:
+                name:
+                  type: string
+                trigger:
+                  type: object
+                actions:
+                  type: array
+                  items:
+                    type: object
+      responses:
+        '201':
+          description: Workflow created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Workflow'
+
+  /api/v1/workflows/{id}:
+    get:
+      summary: Get workflow details
+      tags: [Workflows]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Workflow details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Workflow'
+
+    patch:
+      summary: Update workflow
+      tags: [Workflows]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                enabled:
+                  type: boolean
+      responses:
+        '200':
+          description: Workflow updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Workflow'
+
+  /api/v1/workflows/{id}/execute:
+    post:
+      summary: Execute workflow
+      tags: [Workflows]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                context:
+                  type: object
+      responses:
+        '200':
+          description: Workflow executed
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/v1/team/members:
+    get:
+      summary: List team members
+      tags: [Team]
+      description: Get all team members in workspace
+      responses:
+        '200':
+          description: List of team members
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TeamMember'
+
+    post:
+      summary: Invite team member
+      tags: [Team]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, role]
+              properties:
+                email:
+                  type: string
+                  format: email
+                role:
+                  type: string
+                  enum: [admin, manager, agent, viewer]
+      responses:
+        '201':
+          description: Invitation sent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamMember'
+
+  /api/v1/team/{id}:
+    delete:
+      summary: Remove team member
+      tags: [Team]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Member removed
+
+  /api/v1/webhooks:
+    get:
+      summary: List webhooks
+      tags: [Webhooks]
+      description: Get all configured webhooks
+      responses:
+        '200':
+          description: List of webhooks
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Webhook'
+
+    post:
+      summary: Create webhook
+      tags: [Webhooks]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url, events]
+              properties:
+                url:
+                  type: string
+                  format: uri
+                events:
+                  type: array
+                  items:
+                    type: string
+                    enum: [conversation.created, conversation.closed, message.received, message.sent, contact.created]
+                active:
+                  type: boolean
+                  default: true
+      responses:
+        '201':
+          description: Webhook created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Webhook'
+
+  /api/v1/webhooks/{id}:
+    delete:
+      summary: Delete webhook
+      tags: [Webhooks]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Webhook deleted
+
+  /api/v1/leads:
+    get:
+      summary: List leads
+      tags: [Leads]
+      description: Get captured leads
+      responses:
+        '200':
+          description: List of leads
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Lead'
+
+    post:
+      summary: Capture lead
+      tags: [Leads]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, contact]
+              properties:
+                name:
+                  type: string
+                contact:
+                  type: object
+                  required: [email]
+                  properties:
+                    email:
+                      type: string
+                    phone:
+                      type: string
+                source:
+                  type: string
+      responses:
+        '201':
+          description: Lead captured
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Lead'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token for authentication. Obtain via /api/v1/auth/login
+
+  schemas:
+    Error:
+      type: object
+      required: [detail, code]
+      properties:
+        detail:
+          type: string
+          description: Human-readable error message
+        code:
+          type: string
+          description: Machine-readable error code
+        request_id:
+          type: string
+          format: uuid
+          description: Unique request identifier for tracking
+        timestamp:
+          type: string
+          format: date-time
+
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+        timestamp:
+          type: string
+          format: date-time
+        services_healthy:
+          type: integer
+        services_total:
+          type: integer
+
+    Conversation:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        contact_id:
+          type: string
+          format: uuid
+        channel:
+          type: string
+        status:
+          type: string
+        subject:
+          type: string
+        assigned_to:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        message_count:
+          type: integer
+        last_message_at:
+          type: string
+          format: date-time
+
+    Message:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        conversation_id:
+          type: string
+          format: uuid
+        content:
+          type: string
+        sender_type:
+          type: string
+          enum: [customer, agent, system]
+        created_at:
+          type: string
+          format: date-time
+
+    Contact:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+        phone:
+          type: string
+        first_name:
+          type: string
+        last_name:
+          type: string
+        company:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+
+    Channel:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+        name:
+          type: string
+        enabled:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    Document:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        category:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+
+    Campaign:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        status:
+          type: string
+        recipients_count:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+
+    Workflow:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        enabled:
+          type: boolean
+        trigger:
+          type: object
+        actions:
+          type: array
+        created_at:
+          type: string
+          format: date-time
+
+    TeamMember:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    Webhook:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        url:
+          type: string
+        events:
+          type: array
+          items:
+            type: string
+        active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    Lead:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        source:
+          type: string
+        created_at:
+          type: string
+          format: date-time

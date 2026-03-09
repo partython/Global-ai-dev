@@ -1,0 +1,168 @@
+version: '3.8'
+
+services:
+  # OpenTelemetry Collector
+  # Central hub that receives traces from all 36 services
+  # Processes (samples, batches) and exports to Jaeger
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: priya-otel-collector
+    command:
+      - "--config=/etc/otel-collector-config.yaml"
+    volumes:
+      - ./otel-collector/otel-collector-config.yaml:/etc/otel-collector-config.yaml
+      - ./otel-collector/receivers:/etc/receivers
+    environment:
+      - GOGC=80
+      - GOMAXPROCS=2
+    ports:
+      # OTLP gRPC receiver (primary ingestion)
+      - "4317:4317"
+      # OTLP HTTP receiver (alternative)
+      - "4318:4318"
+      # Prometheus metrics exporter
+      - "8889:8889"
+      # Health check
+      - "13133:13133"
+      # Collector metrics
+      - "8888:8888"
+    depends_on:
+      - jaeger
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:13133/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - priya-network
+    restart: unless-stopped
+
+  # Jaeger All-in-One
+  # Receives traces from collector, stores in memory/backend, provides UI for visualization
+  # In production, replace with Jaeger architecture (collector, query, agent)
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: priya-jaeger
+    environment:
+      # Collector settings
+      COLLECTOR_OTLP_ENABLED: "true"
+      COLLECTOR_OTLP_HOST_PORT: "0.0.0.0:14250"
+      # Query settings
+      QUERY_BASE_PATH: "/"
+      # Storage settings (in-memory for dev, backend for production)
+      MEMORY_MAX_TRACES: "10000"
+      # Sampling settings
+      SAMPLING_TYPE: probabilistic
+      SAMPLING_PARAM: "0.1"
+    ports:
+      # OTLP gRPC receiver
+      - "14250:14250"
+      # Jaeger UI
+      - "16686:16686"
+      # Compact thrift (legacy)
+      - "6831:6831/udp"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:16686"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - priya-network
+    restart: unless-stopped
+
+  # Prometheus for metrics (optional, collects metrics from OTEL collector)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: priya-prometheus
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    environment:
+      - PROMETHEUS_CONFIG_PATH=/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+    depends_on:
+      - otel-collector
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - priya-network
+    restart: unless-stopped
+
+  # Grafana for trace/metric visualization (optional)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: priya-grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+    volumes:
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - jaeger
+      - prometheus
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - priya-network
+    restart: unless-stopped
+
+  # Optional: Tempo for high-volume trace storage (Grafana's trace backend)
+  # Uncomment to use in place of Jaeger for production scenarios
+  # tempo:
+  #   image: grafana/tempo:latest
+  #   container_name: priya-tempo
+  #   environment:
+  #     - TEMPO_MEMORY_MAX_TRACES=10000
+  #   ports:
+  #     - "14250:14250"  # OTLP gRPC
+  #     - "3200:3200"    # UI
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:3200/status"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+  #   networks:
+  #     - priya-network
+  #   restart: unless-stopped
+
+  # Optional: Loki for centralized logging (pairs with Grafana)
+  # Uncomment to enable log aggregation
+  # loki:
+  #   image: grafana/loki:latest
+  #   container_name: priya-loki
+  #   ports:
+  #     - "3100:3100"
+  #   command: -config.file=/etc/loki/local-config.yaml
+  #   volumes:
+  #     - ./loki/local-config.yaml:/etc/loki/local-config.yaml
+  #   networks:
+  #     - priya-network
+  #   restart: unless-stopped
+
+networks:
+  priya-network:
+    driver: bridge
+
+volumes:
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  jaeger_data:
+    driver: local
