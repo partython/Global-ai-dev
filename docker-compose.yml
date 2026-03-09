@@ -31,6 +31,8 @@ x-python-service: &python-service
   volumes:
     - ./config:/app/config:ro
   depends_on:
+    python-base:
+      condition: service_completed_successfully
     postgres:
       condition: service_healthy
     redis:
@@ -53,6 +55,17 @@ x-python-service: &python-service
       max-file: "3"
 
 services:
+  # ─── Base Images ───
+
+  python-base:
+    build:
+      context: .
+      dockerfile: Dockerfile.python-base
+    image: priya-global/python-base:latest
+    profiles: ["core", "channels", "business", "advanced", "ops"]
+    restart: "no"
+    entrypoint: ["echo", "base image built"]
+
   # ─── Infrastructure ───
 
   postgres:
@@ -878,6 +891,8 @@ services:
     working_dir: /app
     command: ["python", "-m", "alembic", "-c", "shared/migrations/alembic.ini", "upgrade", "head"]
     depends_on:
+      python-base:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
 
@@ -888,19 +903,19 @@ services:
       context: .
       dockerfile: Dockerfile.dashboard
       args:
-        NEXT_PUBLIC_API_URL: http://localhost:9000
+        NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:9000}
         NEXT_PUBLIC_SENTRY_DSN: ${SENTRY_DSN:-}
-        NEXT_PUBLIC_ENVIRONMENT: development
-        NODE_ENV_OVERRIDE: development
+        NEXT_PUBLIC_ENVIRONMENT: ${ENVIRONMENT:-development}
+        NODE_ENV_OVERRIDE: ${NODE_ENV:-development}
     container_name: priya-dashboard
     profiles: ["core"]
     restart: unless-stopped
     ports:
       - "3000:3000"
     environment:
-      NODE_ENV: development
-      NEXT_PUBLIC_API_URL: http://localhost:9000
-      NEXT_PUBLIC_APP_URL: http://localhost:3000
+      NODE_ENV: ${NODE_ENV:-development}
+      NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:9000}
+      NEXT_PUBLIC_APP_URL: ${PUBLIC_APP_URL:-http://localhost:3000}
       GATEWAY_INTERNAL_URL: http://gateway:9000
       DATABASE_URL: postgres://priya:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/priya_global
       JWT_SECRET: ${CREDENTIALS_ENCRYPTION_KEY:-fallback-dev-secret}
